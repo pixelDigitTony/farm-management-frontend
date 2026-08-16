@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", "Avenir Next", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --color-berry-950: #4a1534;
+  --color-berry-900: #681b48;
+  --color-blush-50: #fff7fb;
+  --color-petal-500: #ec4899;
+}
+
+@layer base {
+  * {
+    @apply border-stone-200;
+  }
+  body {
+    @apply m-0 bg-blush-50 font-sans text-stone-900 antialiased;
+    background-image: radial-gradient(circle at 92% 0%, rgb(249 168 212 / 18%), transparent 30rem);
+    background-attachment: fixed;
+  }
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+.grain {
+  background-image: radial-gradient(rgb(251 207 232 / 16%) 0.55px, transparent 0.55px);
+  background-size: 8px 8px;
+}

@@ -1,0 +1,188 @@
+# Miss V Business Frontend
+
+The React frontend for Miss V Business, an owner-operated piggery and karenderiya management application. It gives the owner a responsive dashboard for recording cash flow, pigs, feed, slaughter, inventory, recipes, cooking batches, and sales in Philippine pesos.
+
+This project is an independent client application. It communicates with the Miss V Business API through REST and never imports backend Mongoose models or connects directly to MongoDB.
+
+## Features
+
+- First-owner registration, email verification, and verification resend feedback
+- Email/password and Philippine mobile number/MPIN sign-in
+- Automatic access-token refresh and logout
+- Cash accounts, cash in/out, expenses, and payment tracking
+- Pig acquisition, current status, weight history, batches, and accumulated cost
+- Feed receipts, feed usage, inventory lots, and movement history
+- Slaughter yield, meat-part weights, charges, and production cost per kilogram
+- Meat transfer from the piggery to karenderiya inventory
+- Piggery meat and live-pig sales
+- Menu recipes, ingredient costing, target food cost, and selling-price guidance
+- Cooking batches and daily karenderiya sales
+- Dashboard summaries, reports, business settings, and searchable activity history
+- Lazy-loaded application pages, loading skeletons, query errors, and an application error boundary
+
+## Technology
+
+- React 19 and TypeScript
+- Vite
+- Tailwind CSS
+- Radix-based reusable UI components
+- TanStack Query and TanStack Table
+- React Router
+- React Hook Form and Valibot
+- Recharts, Framer Motion, Iconify, and Sonner
+- Biome
+
+## Requirements
+
+- Node.js 22.12 or newer; Node.js 20.19 is also supported by the current Vite version
+- npm
+- The Miss V Business API running locally or available at a configured URL
+
+## Local setup
+
+1. Start the backend API. Its default address is `http://localhost:4000`.
+
+2. Create the frontend environment file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+5. Open `http://localhost:5173`.
+
+Vite proxies local requests from `/api` to `http://localhost:4000`, so the default environment works without a separate API origin.
+
+## Environment variable
+
+| Variable | Purpose | Default/example |
+| --- | --- | --- |
+| `VITE_API_URL` | Base URL prepended to every backend request | `/api` |
+
+Use `/api` for local development or a same-origin production deployment. If the API is hosted separately, set the complete public API base URL before running the production build.
+
+Example:
+
+```env
+VITE_API_URL=https://api.example.com/api
+```
+
+Only variables prefixed with `VITE_` are exposed to browser code. Never place secrets in the frontend environment file.
+
+## Authentication flow
+
+1. The app checks whether first-owner registration is still available.
+2. Registration creates the owner and business through the backend.
+3. The owner opens the emailed verification link, which routes to `/verify-email`.
+4. The owner signs in with email/password or Philippine mobile number/MPIN.
+5. The access token is stored in browser local storage and attached to protected requests.
+6. The HTTP-only refresh cookie is used to renew an expired access token automatically.
+7. If refresh fails, the local access token is cleared and the owner must sign in again.
+
+For local development, the backend's console email provider prints the verification URL in its terminal.
+
+## Application routes
+
+| Route | Page | Purpose |
+| --- | --- | --- |
+| `/login` | Owner sign in | Password or MPIN authentication |
+| `/register` | Owner registration | Initialize the first business owner |
+| `/verify-email` | Email verification | Activate the owner account from a token |
+| `/` | Dashboard | Cash, piggery, karenderiya, inventory, and activity summaries |
+| `/cash-flow` | Cash flow | Expenses, payments, deposits, withdrawals, and balances |
+| `/pigs` | Pig records | Acquisition, current weight, status, and accumulated cost |
+| `/operations` | Piggery operations | Feed use, measurements, batches, and piggery sales |
+| `/slaughter` | Slaughter | Yield, meat parts, costs, corrections, and reversals |
+| `/inventory` | Inventory | Items, receipts, lots, current stock, and movements |
+| `/karenderiya` | Karenderiya | Recipes, menu pricing, cooking batches, and daily sales |
+| `/reports` | Reports | Date-filtered financial, costing, yield, and stock reports |
+| `/activity-log` | Activity log | Searchable owner and data-change audit history |
+| `/settings` | Settings | Business details, defaults, contacts, and slaughter setup |
+
+Protected pages render inside the application shell and redirect unauthenticated visitors to `/login`.
+
+## Business workflow
+
+```text
+Acquire pig -> Record feed and weights -> Slaughter -> Create meat inventory
+                                                        |
+                                                        +-> Piggery sale
+                                                        |
+                                                        +-> Transfer to karenderiya
+                                                            -> Cook menu recipe
+                                                            -> Record daily sale
+```
+
+The UI sends all transaction-sensitive changes to backend operation endpoints. It does not calculate or write authoritative cash balances, inventory balances, or accumulated pig costs by itself.
+
+## Important interface behavior
+
+- Currency is displayed in Philippine pesos.
+- Quantities and weights are entered in kilograms where applicable.
+- Forms show backend validation and transaction errors without silently treating the change as saved.
+- TanStack Query refreshes connected pages after successful operations.
+- Slaughter edit and delete controls remain subject to backend dependency checks.
+- Menu and recipe details are saved through one combined backend operation.
+- Internal meat transfers display inventory cost movement but do not appear as cash income or expenses.
+- Reports are calculated from posted backend records for the selected date range.
+
+## Source layout
+
+```text
+src/
+├── api/          # Fetch client, access-token storage, and session refresh
+├── components/   # Shared cards, feedback, and reusable UI controls
+├── layout/       # Public authentication shell and protected app shell
+├── lib/          # Frontend utilities
+├── pages/        # Route-level application modules
+├── types/        # REST and domain types
+├── App.tsx       # Lazy-loaded routes and authentication boundary
+├── main.tsx      # React application entry
+└── styles.css    # Tailwind theme and global styles
+```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Vite development server |
+| `npm run check` | Run Biome and TypeScript validation |
+| `npm run typecheck` | Run the TypeScript project build check |
+| `npm run build` | Create the production bundle in `dist/` |
+| `npm run preview` | Preview the production bundle locally |
+| `npm run format` | Apply Biome formatting and safe fixes |
+
+## Validation
+
+Run before handing off or deploying frontend changes:
+
+```bash
+npm run check
+npm run build
+```
+
+A passing build validates compilation and bundling, but transaction workflows should also be checked against a running API in the browser.
+
+## Production deployment
+
+1. Set `VITE_API_URL` to the deployed API base URL when the API is not served under the same `/api` origin.
+2. Run `npm install`, `npm run check`, and `npm run build`.
+3. Deploy the generated `dist/` directory to a static host.
+4. Configure the host to serve `index.html` as the fallback for client-side routes.
+5. Use HTTPS and ensure the backend `FRONTEND_URL` exactly matches the deployed frontend origin.
+6. When the API is cross-site, configure its CORS and refresh-cookie SameSite settings accordingly.
+
+## Current scope
+
+The interface is designed for one owner and a small operation of roughly 30 pigs. Multi-user roles, point-of-sale hardware, payroll, employee timekeeping, foreign currency, and full accounting are outside the current scope.
