@@ -80,7 +80,7 @@ export function RegisterPage() {
             <Card className="mt-5 border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
               <p className="font-semibold">The first email could not be sent.</p>
               <p className="mt-1">
-                Check the Cloudflare configuration, then request another email.
+                Check the Resend configuration, then request another email.
               </p>
             </Card>
           )}
