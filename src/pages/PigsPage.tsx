@@ -50,7 +50,12 @@ export function PigsPage() {
       }
 
       const { latestWeightKgCached, ...pigDetails } = payload;
-      await resources.update("pigs", editing._id, pigDetails);
+      const { purchaseCost, ...editablePigDetails } = pigDetails;
+      await api(`/operations/pig-acquisitions/${editing._id}/cost`, {
+        method: "PATCH",
+        body: JSON.stringify({ purchaseCost }),
+      });
+      await resources.update("pigs", editing._id, editablePigDetails);
       const currentWeight =
         editing.latestWeightKgCached == null ? undefined : Number(editing.latestWeightKgCached);
       const nextWeight =
@@ -109,6 +114,7 @@ export function PigsPage() {
             breed: data.breed || undefined,
             currentPen: data.currentPen || undefined,
             acquisitionDate: data.acquisitionDate,
+            purchaseCost: Number(data.purchaseCost),
             latestWeightKgCached: data.latestWeightKgCached
               ? Number(data.latestWeightKgCached)
               : undefined,
@@ -210,7 +216,7 @@ export function PigsPage() {
                   min="0"
                   step="0.01"
                   defaultValue={Number(editing?.purchaseCost ?? 0)}
-                  readOnly={Boolean(editing)}
+                  required
                 />
               </Field>
               <Field label="Current weight (kg)">
@@ -249,8 +255,8 @@ export function PigsPage() {
               )}
               {editing && (
                 <p className="self-end pb-2 text-xs text-stone-500">
-                  A changed weight is recorded as a new measurement dated today. Purchase cost stays
-                  tied to its original expense.
+                  A changed weight is recorded as a new measurement dated today. Purchase cost also
+                  updates the linked purchase expense and accumulated cost.
                 </p>
               )}
               <Button className="sm:col-span-2" disabled={savePig.isPending}>
