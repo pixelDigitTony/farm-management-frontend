@@ -134,7 +134,7 @@ export function App() {
     >
       <Routes>
         <Route path="/login" element={<AuthPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        {/* <Route path="/register" element={<RegisterPage />} /> */}
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-credential" element={<ResetCredentialPage />} />
         <Route path="/join/:tokenId" element={<InviteRegisterPage />} />

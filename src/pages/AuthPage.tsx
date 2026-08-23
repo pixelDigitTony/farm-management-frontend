@@ -214,12 +214,12 @@ export function AuthPage() {
           {loading ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-      <p className="mt-6 text-center text-sm text-stone-500">
+      {/* <p className="mt-6 text-center text-sm text-stone-500">
         First time here?{" "}
         <Link className="font-semibold text-pink-700 hover:underline" to="/register">
           Register your business
         </Link>
-      </p>
+      </p> */}
       <Dialog
         open={Boolean(recoveryKind)}
         onOpenChange={(open) => !open && setRecoveryKind(undefined)}
