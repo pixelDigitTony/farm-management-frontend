@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { api, tokenStore } from "@/api/client";
+import { api, sessionUserStore, tokenStore } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -36,16 +36,33 @@ const navGroups = [
     items: [
       { label: "Reports", to: "/reports", icon: "solar:chart-square-linear" },
       { label: "Activity log", to: "/activity-log", icon: "solar:history-linear" },
+      {
+        label: "Employees",
+        to: "/employees",
+        icon: "solar:users-group-rounded-linear",
+        access: "highest",
+      },
+      { label: "Admin", to: "/admin", icon: "solar:shield-user-linear", access: "super" },
       { label: "Settings", to: "/settings", icon: "solar:settings-linear" },
     ],
   },
 ];
-const nav = navGroups.flatMap((group) => group.items);
-
 export function AppShell() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const user = sessionUserStore.get();
+  const visibleNavGroups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.filter(
+      (item) =>
+        !("access" in item) ||
+        item.access === undefined ||
+        (item.access === "highest" && user?.isHighestRole) ||
+        (item.access === "super" && user?.role === 99),
+    ),
+  }));
+  const nav = visibleNavGroups.flatMap((group) => group.items);
   const current = nav.find((item) => item.to === location.pathname)?.label ?? "Miss V Business";
   const sidebar = (
     <>
@@ -59,7 +76,7 @@ export function AppShell() {
         </div>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
-        {navGroups.map((group) => (
+        {visibleNavGroups.map((group) => (
           <div key={group.label}>
             <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[.18em] text-pink-300/55">
               {group.label}
@@ -90,9 +107,9 @@ export function AppShell() {
       <div className="p-4 pt-0">
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-pink-200/65">
-            Owner account
+            {user?.roleName ?? "Account"}
           </p>
-          <p className="mt-2 text-sm font-semibold text-white">Miss V</p>
+          <p className="mt-2 text-sm font-semibold text-white">{user?.name ?? "User"}</p>
           <button
             type="button"
             className="mt-3 text-xs text-pink-200 hover:text-white"
@@ -105,6 +122,7 @@ export function AppShell() {
                 );
               } finally {
                 tokenStore.clear();
+                sessionUserStore.clear();
                 navigate("/login", { replace: true });
               }
             }}
@@ -150,7 +168,9 @@ export function AppShell() {
               <Icon icon="solar:hamburger-menu-linear" className="size-6" />
             </Button>
             <div>
-              <p className="text-xs font-medium text-stone-400">Miss V Business</p>
+              <p className="text-xs font-medium text-stone-400">
+                {user?.businessName ?? "Miss V Business"}
+              </p>
               <h1 className="font-display text-lg font-semibold leading-none">{current}</h1>
             </div>
           </div>

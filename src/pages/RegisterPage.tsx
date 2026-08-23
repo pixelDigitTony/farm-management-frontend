@@ -74,14 +74,12 @@ export function RegisterPage() {
           <h1 className="mt-6 font-display text-3xl font-semibold">Check your email</h1>
           <p className="mt-3 text-sm leading-relaxed text-stone-500">
             We sent an activation link to <strong className="text-stone-800">{result.email}</strong>
-            . Verify it before using either login method.
+            . After verification, a super admin must approve the new business account.
           </p>
           {result.emailDelivery.status === "FAILED" && (
             <Card className="mt-5 border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
               <p className="font-semibold">The first email could not be sent.</p>
-              <p className="mt-1">
-                Check the Resend configuration, then request another email.
-              </p>
+              <p className="mt-1">Check the Resend configuration, then request another email.</p>
             </Card>
           )}
           {result.emailDelivery.developmentVerificationUrl && (
@@ -105,13 +103,14 @@ export function RegisterPage() {
   return (
     <AuthShell width="max-w-xl">
       <p className="text-sm font-semibold uppercase tracking-[.18em] text-pink-700">
-        Owner registration
+        Business registration
       </p>
       <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-        Create Miss V Business
+        Create a business account
       </h1>
       <p className="mt-3 text-sm text-stone-500">
-        This application supports one owner account. Your email must be verified before login.
+        Company names must be unique. Verify your email, then wait for super-admin approval before
+        accessing the workspace.
       </p>
       <form className="mt-7 grid gap-4 sm:grid-cols-2" onSubmit={submit}>
         <Field label="Owner name">
@@ -200,7 +199,7 @@ export function RegisterPage() {
           rejected.
         </p>
         <Button className="sm:col-span-2" size="lg" disabled={loading}>
-          {loading ? "Creating account…" : "Register owner account"}
+          {loading ? "Creating account…" : "Register business account"}
         </Button>
       </form>
       <p className="mt-6 text-center text-sm text-stone-500">

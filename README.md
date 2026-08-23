@@ -6,7 +6,8 @@ This project is an independent client application. It communicates with the Miss
 
 ## Features
 
-- First-owner registration, email verification, and verification resend feedback
+- Unique-business registration, email verification, and super-admin approval gates
+- Numeric named roles, employee accounts, and QR/link-based sub-account registration
 - Email/password and Philippine mobile number/MPIN sign-in
 - Automatic access-token refresh and logout
 - Cash accounts, cash in/out, expenses, and payment tracking
@@ -82,10 +83,10 @@ Only variables prefixed with `VITE_` are exposed to browser code. Never place se
 
 ## Authentication flow
 
-1. The app checks whether first-owner registration is still available.
-2. Registration creates the owner and business through the backend.
-3. The owner opens the emailed verification link, which routes to `/verify-email`.
-4. The owner signs in with email/password or Philippine mobile number/MPIN.
+1. Registration creates a unique business and a role-0 user.
+2. The user opens the emailed verification link, which routes to `/verify-email`.
+3. Direct business registrations wait at an approval gate until the role-99 super admin approves them.
+4. Approved users sign in with email/password or Philippine mobile number/MPIN.
 5. The access token is stored in browser local storage and attached to protected requests.
 6. The HTTP-only refresh cookie is used to renew an expired access token automatically.
 7. If refresh fails, the local access token is cleared and the owner must sign in again.
@@ -98,7 +99,7 @@ For local development, the backend's console email provider prints the verificat
 | Route | Page | Purpose |
 | --- | --- | --- |
 | `/login` | Owner sign in | Password or MPIN authentication |
-| `/register` | Owner registration | Initialize the first business owner |
+| `/register` | Business registration | Create a unique company and its initial role-0 user |
 | `/verify-email` | Email verification | Activate the owner account from a token |
 | `/reset-credential` | Credential recovery | Set a new password or MPIN from an emailed reset link |
 | `/` | Dashboard | Cash, piggery, karenderiya, inventory, and activity summaries |
@@ -111,6 +112,9 @@ For local development, the backend's console email provider prints the verificat
 | `/reports` | Reports | Date-filtered financial, costing, yield, and stock reports |
 | `/activity-log` | Activity log | Searchable owner and data-change audit history |
 | `/settings` | Settings | Business details, defaults, contacts, and slaughter setup |
+| `/employees` | Employee management | Highest-role accounts, named roles, and QR registration links |
+| `/admin` | Super admin | Role-99 account approval queue |
+| `/join/:tokenId` | Invited registration | Create a sub-account from an opaque registration link |
 
 Protected pages render inside the application shell and redirect unauthenticated visitors to `/login`.
 
@@ -187,4 +191,4 @@ A passing build validates compilation and bundling, but transaction workflows sh
 
 ## Current scope
 
-The interface is designed for one owner and a small operation of roughly 30 pigs. Multi-user roles, point-of-sale hardware, payroll, employee timekeeping, foreign currency, and full accounting are outside the current scope.
+The interface supports multiple unique businesses, business-scoped numeric roles, and employee sub-accounts. Point-of-sale hardware, payroll, employee timekeeping, foreign currency, and full accounting remain outside the current scope.

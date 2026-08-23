@@ -1,6 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { tokenStore } from "@/api/client";
+import { api, type SessionUser, sessionUserStore, tokenStore } from "@/api/client";
+import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/layout/AppShell";
 
@@ -13,6 +15,13 @@ const VerifyEmailPage = lazy(() =>
 );
 const ResetCredentialPage = lazy(() =>
   import("@/pages/ResetCredentialPage").then((m) => ({ default: m.ResetCredentialPage })),
+);
+const AdminPage = lazy(() => import("@/pages/AdminPage").then((m) => ({ default: m.AdminPage })));
+const EmployeesPage = lazy(() =>
+  import("@/pages/EmployeesPage").then((m) => ({ default: m.EmployeesPage })),
+);
+const InviteRegisterPage = lazy(() =>
+  import("@/pages/InviteRegisterPage").then((m) => ({ default: m.InviteRegisterPage })),
 );
 
 const DashboardPage = lazy(() =>
@@ -46,7 +55,73 @@ const SettingsPage = lazy(() =>
 );
 
 function Protected() {
-  return tokenStore.get() ? <AppShell /> : <Navigate to="/login" replace />;
+  const session = useQuery({
+    queryKey: ["session-user"],
+    queryFn: async () => {
+      const result = await api<{ owner: SessionUser }>("/auth/me");
+      sessionUserStore.set(result.owner);
+      return result.owner;
+    },
+    enabled: Boolean(tokenStore.get()),
+    retry: false,
+  });
+  if (!tokenStore.get()) return <Navigate to="/login" replace />;
+  if (session.isLoading) return <PageSkeleton />;
+  if (session.isError || !session.data) {
+    tokenStore.clear();
+    sessionUserStore.clear();
+    return <Navigate to="/login" replace />;
+  }
+  if (!session.data.emailVerified) return <AccountGate user={session.data} kind="email" />;
+  if (session.data.role !== 99 && (!session.data.isApproved || session.data.status !== "ACTIVE"))
+    return <AccountGate user={session.data} kind="approval" />;
+  return <AppShell />;
+}
+
+function AccountGate({ user, kind }: { user: SessionUser; kind: "email" | "approval" }) {
+  return (
+    <div className="grid min-h-screen place-items-center bg-blush-50 p-4">
+      <div className="w-full max-w-lg rounded-3xl border border-pink-100 bg-white p-8 text-center shadow-xl">
+        <h1 className="font-display text-3xl font-semibold">
+          {kind === "email" ? "Verify your email" : "Approval pending"}
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-stone-500">
+          {kind === "email"
+            ? `Open the verification link sent to ${user.email}.`
+            : "A super admin must approve this account before the business workspace becomes available."}
+        </p>
+        {kind === "email" && (
+          <Button
+            className="mt-6 w-full"
+            variant="outline"
+            onClick={() =>
+              void api("/auth/resend-verification", {
+                method: "POST",
+                body: JSON.stringify({ email: user.email }),
+              })
+            }
+          >
+            Resend verification email
+          </Button>
+        )}
+        <Button className="mt-3 w-full" onClick={() => window.location.reload()}>
+          Check status again
+        </Button>
+        <button
+          type="button"
+          className="mt-5 text-sm font-semibold text-pink-700"
+          onClick={async () => {
+            await api("/auth/logout", { method: "POST" }).catch(() => undefined);
+            tokenStore.clear();
+            sessionUserStore.clear();
+            window.location.assign("/login");
+          }}
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
 }
 export function App() {
   return (
@@ -62,6 +137,7 @@ export function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-credential" element={<ResetCredentialPage />} />
+        <Route path="/join/:tokenId" element={<InviteRegisterPage />} />
         <Route element={<Protected />}>
           <Route index element={<DashboardPage />} />
           <Route path="cash-flow" element={<CashFlowPage />} />
@@ -74,6 +150,8 @@ export function App() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="activity-log" element={<ActivityLogPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="employees" element={<EmployeesPage />} />
+          <Route path="admin" element={<AdminPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

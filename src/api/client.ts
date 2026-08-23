@@ -17,6 +17,33 @@ export const tokenStore = {
   clear: () => localStorage.removeItem("miss-v-token"),
 };
 
+export type SessionUser = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: number;
+  roleName: string;
+  status: string;
+  isApproved: boolean;
+  emailVerified: boolean;
+  isHighestRole: boolean;
+  businessName: string;
+};
+
+export const sessionUserStore = {
+  get: (): SessionUser | null => {
+    try {
+      const value = localStorage.getItem("miss-v-user");
+      return value ? (JSON.parse(value) as SessionUser) : null;
+    } catch {
+      return null;
+    }
+  },
+  set: (user: SessionUser) => localStorage.setItem("miss-v-user", JSON.stringify(user)),
+  clear: () => localStorage.removeItem("miss-v-user"),
+};
+
 let refreshPromise: Promise<string | null> | null = null;
 
 async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
