@@ -1,8 +1,9 @@
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { api, resources } from "@/api/client";
+import { api, resources, tokenStore } from "@/api/client";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,13 @@ type SettingsResponse = {
       meatTransferPricingMethod?: string;
     };
   };
-  user: { name: string; email: string; phone: string; emailVerifiedAt?: string };
+  user: {
+    name: string;
+    email: string;
+    phone: string;
+    emailVerifiedAt?: string;
+    pendingEmail?: string;
+  };
   slaughter?: SlaughterSetting;
 };
 type SlaughterSetting = {
@@ -115,6 +122,7 @@ const initialParts: MeatPart[] = [
 
 export function SettingsPage() {
   const client = useQueryClient();
+  const navigate = useNavigate();
   const [contactOpen, setContactOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact>();
   const [costs, setCosts] = useState(initialCosts);
@@ -192,6 +200,32 @@ export function SettingsPage() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const changeAccount = useMutation({
+    mutationFn: async ({
+      path,
+      payload,
+      signOut = false,
+    }: {
+      path: string;
+      payload: unknown;
+      signOut?: boolean;
+    }) => ({
+      result: await api<{ message: string }>(`/settings/account/${path}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+      signOut,
+    }),
+    onSuccess: ({ result, signOut }) => {
+      toast.success(result.message);
+      client.invalidateQueries({ queryKey: ["settings"] });
+      if (signOut) {
+        tokenStore.clear();
+        navigate("/login", { replace: true });
+      }
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   if (settings.isLoading || contacts.isLoading) return <PageSkeleton />;
   if (settings.isError)
@@ -206,8 +240,9 @@ export function SettingsPage() {
         description="Owner profile, business defaults, contacts, and slaughter pricing in Philippine pesos."
       />
       <Tabs defaultValue="business">
-        <TabsList className="h-auto grid-cols-3 gap-1">
+        <TabsList className="h-auto grid-cols-4 gap-1">
           <TabsTrigger value="business">Business</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
           <TabsTrigger value="slaughter">Slaughter defaults</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
         </TabsList>
@@ -303,6 +338,174 @@ export function SettingsPage() {
                   Save business settings
                 </Button>
               </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="account" className="mt-5 space-y-5">
+          <Card>
+            <CardHeader>
+              <CardTitle>Contact and sign-in details</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5 lg:grid-cols-2">
+              <AccountForm
+                title="Change email address"
+                description="A verification link is sent to the new address. Your current email stays active until verification."
+                pending={data.user.pendingEmail}
+                disabled={changeAccount.isPending}
+                onSubmit={(form) =>
+                  changeAccount.mutate({
+                    path: "email",
+                    payload: { newEmail: form.newEmail, currentPassword: form.currentPassword },
+                  })
+                }
+              >
+                <Field label="Current email">
+                  <Input value={data.user.email} disabled />
+                </Field>
+                <Field label="New email">
+                  <Input name="newEmail" type="email" autoComplete="email" required />
+                </Field>
+                <Field label="Current password">
+                  <Input
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                  />
+                </Field>
+              </AccountForm>
+              <AccountForm
+                title="Change phone number"
+                description="This number is used with your MPIN when signing in."
+                disabled={changeAccount.isPending}
+                onSubmit={(form) =>
+                  changeAccount.mutate({
+                    path: "phone",
+                    payload: { newPhone: form.newPhone, currentPassword: form.currentPassword },
+                  })
+                }
+              >
+                <Field label="Current phone">
+                  <Input value={data.user.phone} disabled />
+                </Field>
+                <Field label="New Philippine mobile number">
+                  <Input
+                    name="newPhone"
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="0917 123 4567"
+                    required
+                  />
+                </Field>
+                <Field label="Current password">
+                  <Input
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                  />
+                </Field>
+              </AccountForm>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Security credentials</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5 lg:grid-cols-2">
+              <AccountForm
+                title="Change password"
+                description="Changing your password signs you out on every device."
+                disabled={changeAccount.isPending}
+                onSubmit={(form) => {
+                  if (form.newPassword !== form.confirmPassword) {
+                    toast.error("New passwords do not match");
+                    return;
+                  }
+                  changeAccount.mutate({
+                    path: "password",
+                    payload: {
+                      currentPassword: form.currentPassword,
+                      newPassword: form.newPassword,
+                    },
+                    signOut: true,
+                  });
+                }}
+              >
+                <Field label="Current password">
+                  <Input
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                  />
+                </Field>
+                <Field label="New password">
+                  <Input
+                    name="newPassword"
+                    type="password"
+                    minLength={8}
+                    autoComplete="new-password"
+                    required
+                  />
+                </Field>
+                <Field label="Confirm new password">
+                  <Input
+                    name="confirmPassword"
+                    type="password"
+                    minLength={8}
+                    autoComplete="new-password"
+                    required
+                  />
+                </Field>
+              </AccountForm>
+              <AccountForm
+                title="Change MPIN"
+                description="Use six hard-to-guess digits. Changing it signs you out on every device."
+                disabled={changeAccount.isPending}
+                onSubmit={(form) => {
+                  if (form.newMpin !== form.confirmMpin) {
+                    toast.error("New MPINs do not match");
+                    return;
+                  }
+                  changeAccount.mutate({
+                    path: "mpin",
+                    payload: { currentMpin: form.currentMpin, newMpin: form.newMpin },
+                    signOut: true,
+                  });
+                }}
+              >
+                <Field label="Current MPIN">
+                  <Input
+                    name="currentMpin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                  />
+                </Field>
+                <Field label="New MPIN">
+                  <Input
+                    name="newMpin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                  />
+                </Field>
+                <Field label="Confirm new MPIN">
+                  <Input
+                    name="confirmMpin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                  />
+                </Field>
+              </AccountForm>
             </CardContent>
           </Card>
         </TabsContent>
@@ -591,6 +794,43 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <Label>{label}</Label>
       {children}
     </div>
+  );
+}
+function AccountForm({
+  title,
+  description,
+  pending,
+  disabled,
+  onSubmit,
+  children,
+}: {
+  title: string;
+  description: string;
+  pending?: string;
+  disabled: boolean;
+  onSubmit: (form: Record<string, FormDataEntryValue>) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <form
+      className="rounded-2xl border border-stone-200 p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(Object.fromEntries(new FormData(event.currentTarget)));
+      }}
+    >
+      <h3 className="font-display text-lg font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-stone-500">{description}</p>
+      {pending && (
+        <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+          Awaiting verification: {pending}
+        </p>
+      )}
+      <div className="mt-4 space-y-4">{children}</div>
+      <Button className="mt-5 w-full" disabled={disabled}>
+        Save change
+      </Button>
+    </form>
   );
 }
 function OwnerSelect({ name, value, options }: { name: string; value: string; options: string[] }) {
