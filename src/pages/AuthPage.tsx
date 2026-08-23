@@ -217,7 +217,7 @@ export function AuthPage() {
       <p className="mt-6 text-center text-sm text-stone-500">
         First time here?{" "}
         <Link className="font-semibold text-pink-700 hover:underline" to="/register">
-          Register the owner account
+          Register your business
         </Link>
       </p>
       <Dialog
