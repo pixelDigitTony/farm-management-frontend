@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api, tokenStore } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AuthShell } from "@/layout/AuthShell";
@@ -15,6 +16,8 @@ export function AuthPage() {
   const [method, setMethod] = useState<LoginMethod>("EMAIL_PASSWORD");
   const [loading, setLoading] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [recoveryKind, setRecoveryKind] = useState<"PASSWORD" | "MPIN">();
+  const [requestingRecovery, setRequestingRecovery] = useState(false);
   const navigate = useNavigate();
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -59,6 +62,29 @@ export function AuthPage() {
       success: (result) => result.message,
       error: (error) => (error instanceof Error ? error.message : "Unable to resend email"),
     });
+  }
+
+  async function requestRecovery(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!recoveryKind) return;
+    setRequestingRecovery(true);
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      const result = await api<{ message: string }>("/auth/recovery/request", {
+        method: "POST",
+        body: JSON.stringify(
+          recoveryKind === "PASSWORD"
+            ? { kind: recoveryKind, email: form.identifier }
+            : { kind: recoveryKind, phone: form.identifier },
+        ),
+      });
+      toast.success(result.message);
+      setRecoveryKind(undefined);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to request a reset link");
+    } finally {
+      setRequestingRecovery(false);
+    }
   }
 
   return (
@@ -110,6 +136,13 @@ export function AuthPage() {
                   required
                   placeholder="Your password"
                 />
+                <button
+                  type="button"
+                  className="mt-2 text-sm font-semibold text-pink-700 hover:underline"
+                  onClick={() => setRecoveryKind("PASSWORD")}
+                >
+                  Forgot password?
+                </button>
               </div>
             </motion.div>
           ) : (
@@ -144,6 +177,13 @@ export function AuthPage() {
                   placeholder="••••••"
                   className="tracking-[.45em]"
                 />
+                <button
+                  type="button"
+                  className="mt-2 text-sm font-semibold text-pink-700 hover:underline"
+                  onClick={() => setRecoveryKind("MPIN")}
+                >
+                  Forgot MPIN?
+                </button>
               </div>
             </motion.div>
           )}
@@ -180,6 +220,37 @@ export function AuthPage() {
           Register the owner account
         </Link>
       </p>
+      <Dialog
+        open={Boolean(recoveryKind)}
+        onOpenChange={(open) => !open && setRecoveryKind(undefined)}
+      >
+        <DialogContent>
+          <DialogTitle>Reset your {recoveryKind === "MPIN" ? "MPIN" : "password"}</DialogTitle>
+          <DialogDescription>
+            {recoveryKind === "MPIN"
+              ? "Enter your registered Philippine mobile number. The reset link will be sent to your verified email address."
+              : "Enter your verified email address and we will send you a secure reset link."}
+          </DialogDescription>
+          <form className="mt-6 space-y-4" onSubmit={requestRecovery}>
+            <div>
+              <Label>
+                {recoveryKind === "MPIN" ? "Philippine mobile number" : "Email address"}
+              </Label>
+              <Input
+                name="identifier"
+                type={recoveryKind === "MPIN" ? "tel" : "email"}
+                inputMode={recoveryKind === "MPIN" ? "tel" : "email"}
+                autoComplete={recoveryKind === "MPIN" ? "tel" : "email"}
+                placeholder={recoveryKind === "MPIN" ? "0917 123 4567" : "owner@example.com"}
+                required
+              />
+            </div>
+            <Button className="w-full" disabled={requestingRecovery}>
+              {requestingRecovery ? "Sending reset link…" : "Send reset link"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AuthShell>
   );
 }

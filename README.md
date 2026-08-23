@@ -89,6 +89,7 @@ Only variables prefixed with `VITE_` are exposed to browser code. Never place se
 5. The access token is stored in browser local storage and attached to protected requests.
 6. The HTTP-only refresh cookie is used to renew an expired access token automatically.
 7. If refresh fails, the local access token is cleared and the owner must sign in again.
+8. Forgotten passwords and MPINs are reset through a single-use link sent to the verified email; a successful reset revokes existing sessions.
 
 For local development, the backend's console email provider prints the verification URL in its terminal.
 
@@ -99,6 +100,7 @@ For local development, the backend's console email provider prints the verificat
 | `/login` | Owner sign in | Password or MPIN authentication |
 | `/register` | Owner registration | Initialize the first business owner |
 | `/verify-email` | Email verification | Activate the owner account from a token |
+| `/reset-credential` | Credential recovery | Set a new password or MPIN from an emailed reset link |
 | `/` | Dashboard | Cash, piggery, karenderiya, inventory, and activity summaries |
 | `/cash-flow` | Cash flow | Expenses, payments, deposits, withdrawals, and balances |
 | `/pigs` | Pig records | Acquisition, current weight, status, and accumulated cost |

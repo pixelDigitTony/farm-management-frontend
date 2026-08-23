@@ -11,6 +11,9 @@ const RegisterPage = lazy(() =>
 const VerifyEmailPage = lazy(() =>
   import("@/pages/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage })),
 );
+const ResetCredentialPage = lazy(() =>
+  import("@/pages/ResetCredentialPage").then((m) => ({ default: m.ResetCredentialPage })),
+);
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })),
@@ -58,6 +61,7 @@ export function App() {
         <Route path="/login" element={<AuthPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/reset-credential" element={<ResetCredentialPage />} />
         <Route element={<Protected />}>
           <Route index element={<DashboardPage />} />
           <Route path="cash-flow" element={<CashFlowPage />} />
