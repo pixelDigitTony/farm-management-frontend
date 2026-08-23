@@ -34,6 +34,19 @@ type InventoryLot = {
   unitCost: string;
   status: string;
 };
+type InventoryReceipt = {
+  lotId: string;
+  movementDate: string;
+  itemId: string;
+  quantity: string;
+  unitCost: string;
+  businessUnit: string;
+  storageLocation: string;
+  expiryDate: string | null;
+  amountPaid: string;
+  accountId: string;
+  notes: string;
+};
 type InventoryMovement = {
   _id: string;
   movementNumber: string;
@@ -51,6 +64,7 @@ type CashAccount = { _id: string; name: string };
 export function InventoryPage() {
   const [open, setOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [editingReceipt, setEditingReceipt] = useState<InventoryReceipt>();
   const [transferOpen, setTransferOpen] = useState(false);
   const [editing, setEditing] = useState<InventoryItem>();
   const client = useQueryClient();
@@ -96,7 +110,15 @@ export function InventoryPage() {
   });
   const receiveStock = useMutation({
     mutationFn: (payload: unknown) =>
-      api("/operations/inventory-receipts", { method: "POST", body: JSON.stringify(payload) }),
+      api(
+        editingReceipt
+          ? `/operations/inventory-receipts/${editingReceipt.lotId}`
+          : "/operations/inventory-receipts",
+        {
+          method: editingReceipt ? "PATCH" : "POST",
+          body: JSON.stringify(payload),
+        },
+      ),
     onSuccess: () => {
       for (const key of [
         "inventory",
@@ -108,7 +130,10 @@ export function InventoryPage() {
       ])
         client.invalidateQueries({ queryKey: [key] });
       setReceiptOpen(false);
-      toast.success("Stock received and its cost posted");
+      setEditingReceipt(undefined);
+      toast.success(
+        editingReceipt ? "Stock receipt updated" : "Stock received and its cost posted",
+      );
     },
     onError: (error) => toast.error(error.message),
   });
@@ -150,6 +175,15 @@ export function InventoryPage() {
     )
       remove.mutate(item._id);
   }
+  async function startReceiptEdit(lot: InventoryLot) {
+    try {
+      const receipt = await api<InventoryReceipt>(`/operations/inventory-receipts/${lot._id}`);
+      setEditingReceipt(receipt);
+      setReceiptOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The receipt could not be loaded");
+    }
+  }
   if (isLoading || lots.isLoading || movements.isLoading || accounts.isLoading)
     return <PageSkeleton cards={8} />;
   if (isError) return <QueryError message={error.message} retry={() => refetch()} />;
@@ -163,7 +197,13 @@ export function InventoryPage() {
           <Button variant="outline" onClick={() => setTransferOpen(true)}>
             <Icon icon="solar:transfer-horizontal-linear" /> Transfer meat
           </Button>
-          <Button variant="outline" onClick={() => setReceiptOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setEditingReceipt(undefined);
+              setReceiptOpen(true);
+            }}
+          >
             <Icon icon="solar:inbox-in-linear" /> Receive stock
           </Button>
           <Button onClick={startAdd}>
@@ -244,6 +284,7 @@ export function InventoryPage() {
                   <th>Remaining</th>
                   <th>Unit cost</th>
                   <th>Status</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -264,6 +305,13 @@ export function InventoryPage() {
                         <Badge tone={lot.status === "ACTIVE" ? "green" : "neutral"}>
                           {lot.status}
                         </Badge>
+                      </td>
+                      <td className="text-right">
+                        {lot.sourceType === "PURCHASE" && lot.status !== "VOIDED" && (
+                          <Button variant="outline" size="sm" onClick={() => startReceiptEdit(lot)}>
+                            <Icon icon="solar:pen-linear" /> Edit receipt
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -438,12 +486,21 @@ export function InventoryPage() {
           </form>
         </DialogContent>
       </Dialog>
-      <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogTitle>Receive inventory stock</DialogTitle>
+      <Dialog
+        open={receiptOpen}
+        onOpenChange={(next) => {
+          setReceiptOpen(next);
+          if (!next) setEditingReceipt(undefined);
+        }}
+      >
+        <DialogContent key={editingReceipt?.lotId ?? "new-receipt"} className="max-w-xl">
+          <DialogTitle>
+            {editingReceipt ? "Edit stock receipt" : "Receive inventory stock"}
+          </DialogTitle>
           <DialogDescription>
-            Create a traceable stock lot, inventory movement, expense, and optional cash payment
-            together.
+            {editingReceipt
+              ? "Correct the linked stock lot, movement, expense, and cash payment together."
+              : "Create a traceable stock lot, inventory movement, expense, and optional cash payment together."}
           </DialogDescription>
           <form
             className="mt-6 grid gap-4 sm:grid-cols-2"
@@ -464,7 +521,10 @@ export function InventoryPage() {
               <Input
                 name="movementDate"
                 type="date"
-                defaultValue={format(new Date(), "yyyy-MM-dd")}
+                defaultValue={format(
+                  editingReceipt ? new Date(editingReceipt.movementDate) : new Date(),
+                  "yyyy-MM-dd",
+                )}
                 required
               />
             </Field>
@@ -472,6 +532,7 @@ export function InventoryPage() {
               <OwnerSelect
                 name="itemId"
                 placeholder="Select item"
+                defaultValue={editingReceipt?.itemId}
                 items={(data?.items ?? []).map((item) => ({
                   value: item._id,
                   label: `${item.name} · ${item.baseUnit}`,
@@ -482,6 +543,7 @@ export function InventoryPage() {
               <OwnerSelect
                 name="businessUnit"
                 placeholder="Select business"
+                defaultValue={editingReceipt?.businessUnit}
                 items={[
                   { value: "PIGGERY", label: "Piggery" },
                   { value: "KARENDERIYA", label: "Karenderiya" },
@@ -489,18 +551,39 @@ export function InventoryPage() {
               />
             </Field>
             <Field label="Quantity">
-              <Input name="quantity" type="number" min="0.001" step="0.001" required />
+              <Input
+                name="quantity"
+                type="number"
+                min="0.001"
+                step="0.001"
+                defaultValue={editingReceipt ? Number(editingReceipt.quantity) : undefined}
+                required
+              />
             </Field>
             <Field label="Cost per base unit">
-              <Input name="unitCost" type="number" min="0" step="0.01" required />
+              <Input
+                name="unitCost"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={editingReceipt ? Number(editingReceipt.unitCost) : undefined}
+                required
+              />
             </Field>
             <Field label="Amount paid now">
-              <Input name="amountPaid" type="number" min="0" step="0.01" defaultValue="0" />
+              <Input
+                name="amountPaid"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={editingReceipt ? Number(editingReceipt.amountPaid) : 0}
+              />
             </Field>
             <Field label="Paid from">
               <OwnerSelect
                 name="accountId"
                 placeholder="Select if paid"
+                defaultValue={editingReceipt?.accountId || undefined}
                 required={false}
                 items={(accounts.data?.items ?? []).map((account) => ({
                   value: account._id,
@@ -509,16 +592,28 @@ export function InventoryPage() {
               />
             </Field>
             <Field label="Storage location">
-              <Input name="storageLocation" placeholder="Stock room / freezer" />
+              <Input
+                name="storageLocation"
+                placeholder="Stock room / freezer"
+                defaultValue={editingReceipt?.storageLocation}
+              />
             </Field>
             <Field label="Expiry date">
-              <Input name="expiryDate" type="date" />
+              <Input
+                name="expiryDate"
+                type="date"
+                defaultValue={
+                  editingReceipt?.expiryDate
+                    ? format(new Date(editingReceipt.expiryDate), "yyyy-MM-dd")
+                    : undefined
+                }
+              />
             </Field>
             <Field label="Notes">
-              <Input name="notes" />
+              <Input name="notes" defaultValue={editingReceipt?.notes} />
             </Field>
             <Button className="sm:col-span-2" disabled={receiveStock.isPending}>
-              Receive and post stock
+              {editingReceipt ? "Save receipt correction" : "Receive and post stock"}
             </Button>
           </form>
         </DialogContent>
@@ -619,14 +714,16 @@ function OwnerSelect({
   placeholder,
   items,
   required = true,
+  defaultValue,
 }: {
   name: string;
   placeholder: string;
   items: Array<{ value: string; label: string }>;
   required?: boolean;
+  defaultValue?: string;
 }) {
   return (
-    <Select name={name} required={required}>
+    <Select name={name} required={required} defaultValue={defaultValue}>
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
