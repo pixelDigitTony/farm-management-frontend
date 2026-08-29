@@ -97,3 +97,20 @@ export type KarenderiyaOrder = {
   notes?: string;
   status: string;
 };
+
+export type CalendarTodo = {
+  _id: string;
+  businessId: string;
+  createdByUserId: string;
+  assignedToUserId?: string | null;
+  title: string;
+  notes?: string;
+  calendarDate: string;
+  startTime?: string | null;
+  category: "GENERAL" | "FARM" | "KARENDERIYA";
+  priority: "LOW" | "NORMAL" | "HIGH";
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+  completedAt?: string | null;
+  completedByUserId?: string | null;
+  createdAt: string;
+};

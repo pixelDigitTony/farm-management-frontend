@@ -30,6 +30,9 @@ const DashboardPage = lazy(() =>
 const CashFlowPage = lazy(() =>
   import("@/pages/CashFlowPage").then((m) => ({ default: m.CashFlowPage })),
 );
+const CalendarTodosPage = lazy(() =>
+  import("@/pages/CalendarTodosPage").then((m) => ({ default: m.CalendarTodosPage })),
+);
 const PigsPage = lazy(() => import("@/pages/PigsPage").then((m) => ({ default: m.PigsPage })));
 const FarmOperationsPage = lazy(() =>
   import("@/pages/FarmOperationsPage").then((m) => ({ default: m.FarmOperationsPage })),
@@ -141,6 +144,7 @@ export function App() {
         <Route element={<Protected />}>
           <Route index element={<DashboardPage />} />
           <Route path="cash-flow" element={<CashFlowPage />} />
+          <Route path="calendar" element={<CalendarTodosPage />} />
           <Route path="pigs" element={<PigsPage />} />
           <Route path="operations" element={<FarmOperationsPage />} />
           <Route path="slaughter" element={<SlaughterPage />} />
