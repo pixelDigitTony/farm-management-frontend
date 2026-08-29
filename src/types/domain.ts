@@ -47,6 +47,8 @@ export type InventoryItem = {
   businessUnit: string;
   category: string;
   baseUnit: string;
+  purchaseUnit?: string;
+  purchaseUnitToBaseUnit?: Money;
   currentStockCached: Money;
   lowStockLevel?: Money;
   defaultExternalPricePerUnit?: Money;

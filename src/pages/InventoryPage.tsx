@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatPeso, number } from "@/lib/utils";
+import { formatPeso, number, toFiniteNumber } from "@/lib/utils";
 import type { InventoryItem } from "@/types/domain";
 import { Header } from "./PigsPage";
 
@@ -40,6 +40,10 @@ type InventoryReceipt = {
   itemId: string;
   quantity: string;
   unitCost: string;
+  purchaseQuantity: string;
+  purchaseUnit: string;
+  measurementPerPurchaseUnit: string;
+  totalPurchaseCost: string;
   businessUnit: string;
   storageLocation: string;
   expiryDate: string | null;
@@ -60,11 +64,25 @@ type InventoryMovement = {
   totalCost: string;
 };
 type CashAccount = { _id: string; name: string };
+type ReceiptDraft = {
+  itemId: string;
+  purchaseQuantity: string;
+  measurementPerPurchaseUnit: string;
+  totalPurchaseCost: string;
+};
+
+const emptyReceiptDraft: ReceiptDraft = {
+  itemId: "",
+  purchaseQuantity: "",
+  measurementPerPurchaseUnit: "",
+  totalPurchaseCost: "",
+};
 
 export function InventoryPage() {
   const [open, setOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<InventoryReceipt>();
+  const [receiptDraft, setReceiptDraft] = useState<ReceiptDraft>(emptyReceiptDraft);
   const [transferOpen, setTransferOpen] = useState(false);
   const [editing, setEditing] = useState<InventoryItem>();
   const client = useQueryClient();
@@ -155,6 +173,7 @@ export function InventoryPage() {
       ...d,
       ...(editing ? {} : { currentStockCached: 0 }),
       lowStockLevel: Number(d.lowStockLevel),
+      purchaseUnitToBaseUnit: Number(d.purchaseUnitToBaseUnit),
       defaultKarenderiyaTransferPricePerUnit: Number(d.defaultKarenderiyaTransferPricePerUnit),
       isPerishable: d.isPerishable === "on",
     });
@@ -179,11 +198,26 @@ export function InventoryPage() {
     try {
       const receipt = await api<InventoryReceipt>(`/operations/inventory-receipts/${lot._id}`);
       setEditingReceipt(receipt);
+      setReceiptDraft({
+        itemId: receipt.itemId,
+        purchaseQuantity: String(toFiniteNumber(receipt.purchaseQuantity)),
+        measurementPerPurchaseUnit: String(toFiniteNumber(receipt.measurementPerPurchaseUnit)),
+        totalPurchaseCost: String(toFiniteNumber(receipt.totalPurchaseCost)),
+      });
       setReceiptOpen(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The receipt could not be loaded");
     }
   }
+  const selectedReceiptItem = data?.items.find((item) => item._id === receiptDraft.itemId);
+  const receiptPurchaseUnit =
+    editingReceipt && editingReceipt.itemId === receiptDraft.itemId
+      ? editingReceipt.purchaseUnit
+      : (selectedReceiptItem?.purchaseUnit ?? selectedReceiptItem?.baseUnit);
+  const receiptBaseUnit = selectedReceiptItem?.baseUnit;
+  const receiptStockQuantity =
+    Number(receiptDraft.purchaseQuantity) * Number(receiptDraft.measurementPerPurchaseUnit);
+  const receiptTotalCost = Number(receiptDraft.totalPurchaseCost);
   if (isLoading || lots.isLoading || movements.isLoading || accounts.isLoading)
     return <PageSkeleton cards={8} />;
   if (isError) return <QueryError message={error.message} retry={() => refetch()} />;
@@ -201,6 +235,7 @@ export function InventoryPage() {
             variant="outline"
             onClick={() => {
               setEditingReceipt(undefined);
+              setReceiptDraft(emptyReceiptDraft);
               setReceiptOpen(true);
             }}
           >
@@ -242,6 +277,10 @@ export function InventoryPage() {
                   <h3 className="mt-4 font-display text-lg font-semibold">{item.name}</h3>
                   <p className="mt-1 text-xs text-stone-400">
                     {item.itemCode} · {item.category}
+                  </p>
+                  <p className="mt-2 text-xs text-stone-500">
+                    1 {item.purchaseUnit ?? item.baseUnit} ={" "}
+                    {number.format(Number(item.purchaseUnitToBaseUnit ?? 1))} {item.baseUnit}
                   </p>
                   <p className="mt-5 text-2xl font-bold">
                     {Number(item.currentStockCached)}{" "}
@@ -442,6 +481,38 @@ export function InventoryPage() {
                 </SelectContent>
               </Select>
             </Field>
+            <Field label="Purchase unit">
+              <Select
+                name="purchaseUnit"
+                defaultValue={editing?.purchaseUnit ?? editing?.baseUnit ?? "KG"}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["KG", "GRAM", "LITER", "ML", "PIECE", "PACK", "SACK", "BOTTLE", "OTHER"].map(
+                    (v) => (
+                      <SelectItem key={v} value={v}>
+                        {v}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Measurement per purchase unit">
+              <Input
+                name="purchaseUnitToBaseUnit"
+                type="number"
+                min="0.001"
+                step="0.001"
+                defaultValue={Number(editing?.purchaseUnitToBaseUnit ?? 1)}
+                required
+              />
+              <p className="mt-1 text-xs text-stone-500">
+                Example: one 50 kg sack equals 50 base KG.
+              </p>
+            </Field>
             <div className="rounded-xl bg-pink-50 p-3 text-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
                 Stock on hand
@@ -453,7 +524,7 @@ export function InventoryPage() {
                 Changed only by receiving, usage, transfer, cooking, or sale operations.
               </p>
             </div>
-            <Field label="Low-stock level">
+            <Field label="Low-stock level (base unit)">
               <Input
                 name="lowStockLevel"
                 type="number"
@@ -490,7 +561,10 @@ export function InventoryPage() {
         open={receiptOpen}
         onOpenChange={(next) => {
           setReceiptOpen(next);
-          if (!next) setEditingReceipt(undefined);
+          if (!next) {
+            setEditingReceipt(undefined);
+            setReceiptDraft(emptyReceiptDraft);
+          }
         }}
       >
         <DialogContent key={editingReceipt?.lotId ?? "new-receipt"} className="max-w-xl">
@@ -509,8 +583,9 @@ export function InventoryPage() {
               const form = Object.fromEntries(new FormData(event.currentTarget));
               receiveStock.mutate({
                 ...form,
-                quantity: Number(form.quantity),
-                unitCost: Number(form.unitCost),
+                purchaseQuantity: Number(form.purchaseQuantity),
+                measurementPerPurchaseUnit: Number(form.measurementPerPurchaseUnit),
+                totalPurchaseCost: Number(form.totalPurchaseCost),
                 amountPaid: Number(form.amountPaid),
                 accountId: form.accountId || undefined,
                 expiryDate: form.expiryDate || undefined,
@@ -532,10 +607,19 @@ export function InventoryPage() {
               <OwnerSelect
                 name="itemId"
                 placeholder="Select item"
-                defaultValue={editingReceipt?.itemId}
+                value={receiptDraft.itemId || undefined}
+                onValueChange={(itemId) => {
+                  const item = data?.items.find((candidate) => candidate._id === itemId);
+                  const measurement = toFiniteNumber(item?.purchaseUnitToBaseUnit ?? 1);
+                  setReceiptDraft((current) => ({
+                    ...current,
+                    itemId,
+                    measurementPerPurchaseUnit: String(measurement),
+                  }));
+                }}
                 items={(data?.items ?? []).map((item) => ({
                   value: item._id,
-                  label: `${item.name} · ${item.baseUnit}`,
+                  label: `${item.name} · ${item.purchaseUnit ?? item.baseUnit} → ${item.baseUnit}`,
                 }))}
               />
             </Field>
@@ -550,26 +634,81 @@ export function InventoryPage() {
                 ]}
               />
             </Field>
-            <Field label="Quantity">
+            <Field
+              label={`Purchased quantity${receiptPurchaseUnit ? ` (${receiptPurchaseUnit})` : ""}`}
+            >
               <Input
-                name="quantity"
+                name="purchaseQuantity"
                 type="number"
                 min="0.001"
                 step="0.001"
-                defaultValue={editingReceipt ? Number(editingReceipt.quantity) : undefined}
+                value={receiptDraft.purchaseQuantity}
+                onChange={(event) =>
+                  setReceiptDraft((current) => ({
+                    ...current,
+                    purchaseQuantity: event.target.value,
+                  }))
+                }
                 required
               />
             </Field>
-            <Field label="Cost per base unit">
+            <Field
+              label={`Measurement per ${receiptPurchaseUnit ?? "purchased unit"}${receiptBaseUnit ? ` (${receiptBaseUnit})` : ""}`}
+            >
               <Input
-                name="unitCost"
+                name="measurementPerPurchaseUnit"
+                type="number"
+                min="0.001"
+                step="0.001"
+                value={receiptDraft.measurementPerPurchaseUnit}
+                onChange={(event) =>
+                  setReceiptDraft((current) => ({
+                    ...current,
+                    measurementPerPurchaseUnit: event.target.value,
+                  }))
+                }
+                required
+              />
+            </Field>
+            <Field label="Total purchase cost">
+              <Input
+                name="totalPurchaseCost"
                 type="number"
                 min="0"
                 step="0.01"
-                defaultValue={editingReceipt ? Number(editingReceipt.unitCost) : undefined}
+                value={receiptDraft.totalPurchaseCost}
+                onChange={(event) =>
+                  setReceiptDraft((current) => ({
+                    ...current,
+                    totalPurchaseCost: event.target.value,
+                  }))
+                }
                 required
               />
+              <p className="mt-1 text-xs text-stone-500">
+                Enter the full amount for all stock in this receipt.
+              </p>
             </Field>
+            <div className="rounded-xl bg-pink-50 p-3 text-sm sm:col-span-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                Receipt calculation
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <p>
+                  <span className="block text-xs text-stone-500">Stock added</span>
+                  <strong>
+                    {number.format(
+                      Number.isFinite(receiptStockQuantity) ? receiptStockQuantity : 0,
+                    )}{" "}
+                    {receiptBaseUnit ?? "base units"}
+                  </strong>
+                </p>
+                <p>
+                  <span className="block text-xs text-stone-500">Total purchase cost</span>
+                  <strong>{formatPeso(receiptTotalCost)}</strong>
+                </p>
+              </div>
+            </div>
             <Field label="Amount paid now">
               <Input
                 name="amountPaid"
@@ -715,15 +854,25 @@ function OwnerSelect({
   items,
   required = true,
   defaultValue,
+  value,
+  onValueChange,
 }: {
   name: string;
   placeholder: string;
   items: Array<{ value: string; label: string }>;
   required?: boolean;
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
 }) {
   return (
-    <Select name={name} required={required} defaultValue={defaultValue}>
+    <Select
+      name={name}
+      required={required}
+      defaultValue={defaultValue}
+      value={value}
+      onValueChange={onValueChange}
+    >
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

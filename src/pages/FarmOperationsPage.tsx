@@ -42,7 +42,9 @@ type FeedUsage = {
   _id: string;
   usageNumber: string;
   usageDate: string;
+  feedItemId: string;
   quantityUsed: string;
+  unit?: string;
   totalFeedCost: string;
   allocationType: string;
   status: string;
@@ -72,6 +74,7 @@ const today = () => format(new Date(), "yyyy-MM-dd");
 export function FarmOperationsPage() {
   const [dialog, setDialog] = useState<"batch" | "weight" | "feed" | "sale" | null>(null);
   const [feedAllocation, setFeedAllocation] = useState<"PIG" | "PIG_BATCH" | "GENERAL">("PIG");
+  const [selectedFeedItemId, setSelectedFeedItemId] = useState("");
   const [saleType, setSaleType] = useState<"LIVE_PIG" | "MEAT_PART" | "BYPRODUCT">("LIVE_PIG");
   const client = useQueryClient();
   const pigs = useQuery({ queryKey: ["pigs"], queryFn: () => resources.list<Pig>("pigs") });
@@ -196,7 +199,10 @@ export function FarmOperationsPage() {
           <SectionHeader
             title="Feed cost ledger"
             action="Record feed usage"
-            onClick={() => setDialog("feed")}
+            onClick={() => {
+              setSelectedFeedItemId("");
+              setDialog("feed");
+            }}
           />
           <Ledger
             headers={["Date", "Reference", "Allocation", "Quantity", "Cost", "Status"]}
@@ -205,7 +211,11 @@ export function FarmOperationsPage() {
               format(new Date(usage.usageDate), "MMM d, yyyy"),
               usage.usageNumber,
               usage.allocationType.replaceAll("_", " "),
-              `${number.format(Number(usage.quantityUsed))} kg`,
+              `${number.format(Number(usage.quantityUsed))} ${
+                usage.unit ??
+                feedItems.data?.items.find((item) => item._id === usage.feedItemId)?.baseUnit ??
+                "units"
+              }`,
               formatPeso(usage.totalFeedCost),
               <Badge key={usage._id} tone="green">
                 {usage.status}
@@ -367,14 +377,23 @@ export function FarmOperationsPage() {
                 <Input name="usageDate" type="date" defaultValue={today()} required />
               </Field>
               <Field label="Feed item">
-                <OwnerSelect
+                <Select
                   name="feedItemId"
-                  placeholder="Select feed"
-                  items={(feedItems.data?.items ?? []).map((item) => ({
-                    value: item._id,
-                    label: `${item.name} · ${Number(item.currentStockCached)} ${item.baseUnit}`,
-                  }))}
-                />
+                  required
+                  value={selectedFeedItemId}
+                  onValueChange={setSelectedFeedItemId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select feed" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(feedItems.data?.items ?? []).map((item) => (
+                      <SelectItem key={item._id} value={item._id}>
+                        {item.name} · {Number(item.currentStockCached)} {item.baseUnit}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
               <Field label="Allocate cost to">
                 <Select
@@ -411,7 +430,12 @@ export function FarmOperationsPage() {
                   />
                 </Field>
               )}
-              <Field label="Quantity used (kg)">
+              <Field
+                label={`Quantity used (${
+                  feedItems.data?.items.find((item) => item._id === selectedFeedItemId)?.baseUnit ??
+                  "base unit"
+                })`}
+              >
                 <Input name="quantityUsed" type="number" min="0.001" step="0.001" required />
               </Field>
               <Field label="Notes">
