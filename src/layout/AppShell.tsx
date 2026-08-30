@@ -14,6 +14,12 @@ const navGroups = [
       { label: "Overview", to: "/", icon: "solar:widget-5-linear" },
       { label: "Cash flow", to: "/cash-flow", icon: "solar:wallet-money-linear" },
       { label: "Calendar & To-do", to: "/calendar", icon: "solar:calendar-minimalistic-linear" },
+      {
+        label: "Landing Page",
+        to: "/landing-page",
+        icon: "solar:palette-round-linear",
+        access: "highest",
+      },
       { label: "Inventory", to: "/inventory", icon: "solar:box-linear" },
     ],
   },

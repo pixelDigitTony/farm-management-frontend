@@ -19,6 +19,7 @@ This project is an independent client application. It communicates with the Miss
 - Menu recipes, ingredient costing, target food cost, and selling-price guidance
 - Cooking batches and daily karenderiya sales
 - Dashboard summaries, reports, business settings, and searchable activity history
+- Owner landing-page builder with draggable components, variants, live preview, and publishing
 - Lazy-loaded application pages, loading skeletons, query errors, and an application error boundary
 
 ## Technology
@@ -70,6 +71,7 @@ Vite proxies local requests from `/api` to `http://localhost:4000`, so the defau
 | Variable | Purpose | Default/example |
 | --- | --- | --- |
 | `VITE_API_URL` | Base URL prepended to every backend request | `/api` |
+| `VITE_PUBLIC_SITE_BASE_DOMAIN` | Wildcard base domain used for published business sites | unset locally; `yourdomain.com` in production |
 
 Use `/api` for local development or a same-origin production deployment. If the API is hosted separately, set the complete public API base URL before running the production build.
 
@@ -115,6 +117,8 @@ For local development, the backend's console email provider prints the verificat
 | `/employees` | Employee management | Highest-role accounts, named roles, and QR registration links |
 | `/admin` | Super admin | Role-99 account approval queue |
 | `/join/:tokenId` | Invited registration | Create a sub-account from an opaque registration link |
+| `/landing-page` | Landing-page builder | Create variants and publish the owner-managed public site |
+| `/site/:slug` | Public landing page | Local/fallback route when a wildcard domain is not configured |
 
 Protected pages render inside the application shell and redirect unauthenticated visitors to `/login`.
 
@@ -183,11 +187,13 @@ A passing build validates compilation and bundling, but transaction workflows sh
 ## Production deployment
 
 1. Set `VITE_API_URL` to the deployed API base URL when the API is not served under the same `/api` origin.
-2. Run `npm install`, `npm run check`, and `npm run build`.
-3. Deploy the generated `dist/` directory to a static host.
-4. Configure the host to serve `index.html` as the fallback for client-side routes.
-5. Use HTTPS and ensure the backend `FRONTEND_URL` exactly matches the deployed frontend origin.
-6. When the API is cross-site, configure its CORS and refresh-cookie SameSite settings accordingly.
+2. Set `VITE_PUBLIC_SITE_BASE_DOMAIN` to the domain whose wildcard subdomains will host published pages.
+3. Run `npm install`, `npm run check`, and `npm run build`.
+4. Deploy the generated `dist/` directory to a static host.
+5. Configure the host to serve `index.html` as the fallback for client-side routes.
+6. Add wildcard DNS and hosting for `*.yourdomain.com`, pointing every business subdomain to this frontend deployment with wildcard TLS enabled.
+7. Use HTTPS and ensure the backend `FRONTEND_URL` exactly matches the owner application's deployed origin.
+8. Set the backend `PUBLIC_SITE_BASE_DOMAIN` to the same domain. When the API is hosted separately, use an absolute `VITE_API_URL` such as `https://api.yourdomain.com/api`.
 
 ## Current scope
 

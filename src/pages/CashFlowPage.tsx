@@ -102,7 +102,11 @@ function ExpenseCategorySelect({ defaultValue }: { defaultValue: string }) {
             aria-label="Search expense categories"
             autoFocus
           />
-          <div className="mt-2 max-h-56 overflow-y-auto" role="listbox" aria-label="Expense categories">
+          <div
+            className="mt-2 max-h-56 overflow-y-auto"
+            role="listbox"
+            aria-label="Expense categories"
+          >
             {matchingCategories.length ? (
               matchingCategories.map((category) => (
                 <button

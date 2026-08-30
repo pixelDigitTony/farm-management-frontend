@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/layout/AppShell";
+import { getPublicSiteSlugFromHostname } from "@/lib/public-site";
 
 const AuthPage = lazy(() => import("@/pages/AuthPage").then((m) => ({ default: m.AuthPage })));
 const RegisterPage = lazy(() =>
@@ -38,6 +39,12 @@ const CashFlowPage = lazy(() =>
 );
 const CalendarTodosPage = lazy(() =>
   import("@/pages/CalendarTodosPage").then((m) => ({ default: m.CalendarTodosPage })),
+);
+const LandingPageBuilderPage = lazy(() =>
+  import("@/pages/LandingPageBuilderPage").then((m) => ({ default: m.LandingPageBuilderPage })),
+);
+const PublicLandingPage = lazy(() =>
+  import("@/pages/PublicLandingPage").then((m) => ({ default: m.PublicLandingPage })),
 );
 const PigsPage = lazy(() => import("@/pages/PigsPage").then((m) => ({ default: m.PigsPage })));
 const FarmOperationsPage = lazy(() =>
@@ -134,6 +141,19 @@ function AccountGate({ user, kind }: { user: SessionUser; kind: "email" | "appro
   );
 }
 export function App() {
+  const publicSiteSlug = getPublicSiteSlugFromHostname(window.location.hostname);
+  if (publicSiteSlug)
+    return (
+      <Suspense
+        fallback={
+          <div className="mx-auto max-w-[1440px] p-4 sm:p-6 lg:p-8">
+            <PageSkeleton />
+          </div>
+        }
+      >
+        <PublicLandingPage slug={publicSiteSlug} />
+      </Suspense>
+    );
   return (
     <Suspense
       fallback={
@@ -148,10 +168,12 @@ export function App() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-credential" element={<ResetCredentialPage />} />
         <Route path="/join/:tokenId" element={<InviteRegisterPage />} />
+        <Route path="/site/:slug" element={<PublicLandingPage />} />
         <Route element={<Protected />}>
           <Route index element={<DashboardPage />} />
           <Route path="cash-flow" element={<CashFlowPage />} />
           <Route path="calendar" element={<CalendarTodosPage />} />
+          <Route path="landing-page" element={<LandingPageBuilderPage />} />
           <Route path="pigs" element={<PigsPage />} />
           <Route path="operations" element={<FarmOperationsPage />} />
           <Route path="slaughter" element={<SlaughterPage />} />
