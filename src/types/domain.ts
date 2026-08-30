@@ -60,6 +60,9 @@ export type MenuItem = {
   menuCode: string;
   name: string;
   category?: string;
+  mediaUrls?: string[];
+  googleDriveUrl?: string | null;
+  googleDriveUrls?: string[];
   recipeId: string;
   sellingPricePerServing: Money;
   targetFoodCostPercent: Money;

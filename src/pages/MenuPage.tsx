@@ -4,6 +4,12 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, resources } from "@/api/client";
+import {
+  createMenuMediaLinks,
+  MenuMediaFields,
+  type MenuMediaLink,
+} from "@/components/GoogleDriveMediaFields";
+import { MenuViewDialog } from "@/components/MenuViewDialog";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { getMenuMediaEmbed, getMenuMediaUrls, normalizeMediaUrls } from "@/lib/google-drive";
 import { formatPeso, number } from "@/lib/utils";
 import type { InventoryItem, MenuItem, Recipe } from "@/types/domain";
 import { Header } from "./PigsPage";
@@ -42,9 +49,11 @@ const emptyLine = (): RecipeLine => ({
 export function MenuPage() {
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [viewing, setViewing] = useState<MenuItem>();
   const [editing, setEditing] = useState<MenuItem>();
   const [deleting, setDeleting] = useState<MenuItem>();
   const [ingredients, setIngredients] = useState<RecipeLine[]>([emptyLine()]);
+  const [mediaLinks, setMediaLinks] = useState<MenuMediaLink[]>(() => createMenuMediaLinks());
   const [result, setResult] = useState<PriceResult>();
 
   const menus = useQuery({
@@ -140,6 +149,11 @@ export function MenuPage() {
       return;
     }
     const formValues = values(form);
+    const mediaUrls = normalizeMediaUrls(mediaLinks.map((link) => link.value));
+    if (mediaUrls.some((url) => !getMenuMediaEmbed(url))) {
+      toast.error("Enter a valid Drive, YouTube, Instagram, or Facebook media link");
+      return;
+    }
     const code = editing?.menuCode ?? `MENU-${Date.now().toString().slice(-6)}`;
     saveMenu.mutate({
       recipe: {
@@ -167,6 +181,9 @@ export function MenuPage() {
       menu: {
         menuCode: code,
         name: formValues.name,
+        mediaUrls,
+        googleDriveUrl: null,
+        googleDriveUrls: [],
         sellingPricePerServing: formValues.sellingPrice,
         targetFoodCostPercent: formValues.targetFoodCostPercent,
         calculatedCostPerServingCached: result.costPerServing,
@@ -180,12 +197,15 @@ export function MenuPage() {
   function startCreate() {
     setEditing(undefined);
     setIngredients([emptyLine()]);
+    setMediaLinks(createMenuMediaLinks());
     setResult(undefined);
     setOpen(true);
   }
   function startEdit(menu: MenuItem) {
     const recipe = recipeItems.find((item) => item._id === menu.recipeId);
     setEditing(menu);
+    const savedMediaLinks = getMenuMediaUrls(menu);
+    setMediaLinks(createMenuMediaLinks(savedMediaLinks));
     setIngredients(
       recipe?.ingredients.length
         ? recipe.ingredients.map((line) => ({
@@ -267,6 +287,9 @@ export function MenuPage() {
                     </td>
                     <td className="px-5">
                       <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setViewing(menu)}>
+                          <Icon icon="solar:eye-linear" /> View
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => startEdit(menu)}>
                           <Icon icon="solar:pen-linear" /> Edit
                         </Button>
@@ -450,6 +473,7 @@ export function MenuPage() {
                 required
               />
             </Field>
+            <MenuMediaFields links={mediaLinks} onChange={setMediaLinks} />
             <label className="flex items-center gap-2 pt-6 text-sm">
               <input
                 name="isAvailable"
@@ -486,6 +510,12 @@ export function MenuPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <MenuViewDialog
+        key={viewing?._id ?? "no-menu-view"}
+        menu={viewing}
+        onOpenChange={(next) => !next && setViewing(undefined)}
+      />
 
       <Dialog open={Boolean(deleting)} onOpenChange={(next) => !next && setDeleting(undefined)}>
         <DialogContent>

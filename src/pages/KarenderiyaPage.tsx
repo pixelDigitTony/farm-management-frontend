@@ -4,6 +4,12 @@ import { format } from "date-fns";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, resources } from "@/api/client";
+import {
+  createMenuMediaLinks,
+  MenuMediaFields,
+  type MenuMediaLink,
+} from "@/components/GoogleDriveMediaFields";
+import { MenuViewDialog } from "@/components/MenuViewDialog";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { getMenuMediaEmbed, getMenuMediaUrls, normalizeMediaUrls } from "@/lib/google-drive";
 import { formatPeso } from "@/lib/utils";
 import type { InventoryItem, KarenderiyaOrder, MenuItem, Recipe } from "@/types/domain";
 import { Header } from "./PigsPage";
@@ -36,7 +43,6 @@ type OrderLine = {
   menuItemId: string;
   cookingBatchId?: string;
   quantitySold: number;
-  discount: number;
 };
 type CookingBatch = {
   _id: string;
@@ -62,7 +68,6 @@ const emptyOrderLine = (): OrderLine => ({
   id: crypto.randomUUID(),
   menuItemId: "",
   quantitySold: 1,
-  discount: 0,
 });
 
 export function KarenderiyaPage() {
@@ -70,10 +75,12 @@ export function KarenderiyaPage() {
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderEditOpen, setOrderEditOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [viewingMenu, setViewingMenu] = useState<MenuItem>();
   const [editingMenu, setEditingMenu] = useState<MenuItem>();
   const [editingOrder, setEditingOrder] = useState<KarenderiyaOrder>();
   const [result, setResult] = useState<PriceResult>();
   const [ingredients, setIngredients] = useState<RecipeLine[]>([emptyRecipeLine()]);
+  const [mediaLinks, setMediaLinks] = useState<MenuMediaLink[]>(() => createMenuMediaLinks());
   const [orderLines, setOrderLines] = useState<OrderLine[]>([emptyOrderLine()]);
   const [orderDate, setOrderDate] = useState(today());
   const client = useQueryClient();
@@ -238,6 +245,11 @@ export function KarenderiyaPage() {
   function save(form: HTMLFormElement) {
     if (!result) return toast.error("Calculate the recipe first");
     const values = menuValues(form);
+    const mediaUrls = normalizeMediaUrls(mediaLinks.map((link) => link.value));
+    if (mediaUrls.some((url) => !getMenuMediaEmbed(url))) {
+      toast.error("Enter a valid Drive, YouTube, Instagram, or Facebook media link");
+      return;
+    }
     const code = editingMenu?.menuCode ?? `MENU-${Date.now().toString().slice(-6)}`;
     saveMenu.mutate({
       recipe: {
@@ -263,6 +275,9 @@ export function KarenderiyaPage() {
       menu: {
         menuCode: code,
         name: values.name,
+        mediaUrls,
+        googleDriveUrl: null,
+        googleDriveUrls: [],
         sellingPricePerServing: values.sellingPrice,
         targetFoodCostPercent: values.targetFoodCostPercent,
         calculatedCostPerServingCached: result.costPerServing,
@@ -276,12 +291,15 @@ export function KarenderiyaPage() {
   function startAddMenu() {
     setEditingMenu(undefined);
     setIngredients([emptyRecipeLine()]);
+    setMediaLinks(createMenuMediaLinks());
     setResult(undefined);
     setMenuOpen(true);
   }
   function startEditMenu(menu: MenuItem) {
     const recipe = recipes.find((item) => item._id === menu.recipeId);
     setEditingMenu(menu);
+    const savedMediaLinks = getMenuMediaUrls(menu);
+    setMediaLinks(createMenuMediaLinks(savedMediaLinks));
     setIngredients(
       recipe?.ingredients.length
         ? recipe.ingredients.map((line) => ({
@@ -305,11 +323,10 @@ export function KarenderiyaPage() {
       salesDate: data.salesDate,
       receivingAccountId: data.receivingAccountId,
       notes: data.notes,
-      items: orderLines.map(({ menuItemId, cookingBatchId, quantitySold, discount }) => ({
+      items: orderLines.map(({ menuItemId, cookingBatchId, quantitySold }) => ({
         menuItemId,
         cookingBatchId: cookingBatchId || undefined,
         quantitySold,
-        discount,
       })),
     });
   }
@@ -369,6 +386,14 @@ export function KarenderiyaPage() {
                 />
               </div>
               <div className="mt-4 flex gap-2 border-t border-pink-100 pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setViewingMenu(item)}
+                >
+                  <Icon icon="solar:eye-linear" /> View
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -667,6 +692,7 @@ export function KarenderiyaPage() {
                 required
               />
             </Field>
+            <MenuMediaFields links={mediaLinks} onChange={setMediaLinks} />
             <label className="flex items-center gap-2 pt-6 text-sm">
               <input
                 name="isAvailable"
@@ -709,6 +735,12 @@ export function KarenderiyaPage() {
         </DialogContent>
       </Dialog>
 
+      <MenuViewDialog
+        key={viewingMenu?._id ?? "no-karenderiya-menu-view"}
+        menu={viewingMenu}
+        onOpenChange={(next) => !next && setViewingMenu(undefined)}
+      />
+
       <Dialog open={orderOpen} onOpenChange={setOrderOpen}>
         <DialogContent className="max-w-xl">
           <DialogTitle>Add order transaction</DialogTitle>
@@ -748,73 +780,66 @@ export function KarenderiyaPage() {
               {orderLines.map((line, index) => (
                 <div
                   key={line.id}
-                  className="grid gap-2 rounded-xl bg-stone-50 p-3 sm:grid-cols-[1fr_90px_100px_auto]"
+                  className="grid gap-3 rounded-xl bg-stone-50 p-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]"
                 >
-                  <Select
-                    value={line.menuItemId}
-                    onValueChange={(value) =>
-                      setOrderLines(
-                        orderLines.map((item, i) =>
-                          i === index
-                            ? { ...item, menuItemId: value, cookingBatchId: undefined }
-                            : item,
-                        ),
-                      )
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Menu item" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {menus
-                        .filter((menu) => menu.isAvailable)
-                        .map((menu) => (
-                          <SelectItem key={menu._id} value={menu._id}>
-                            {menu.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    aria-label="Quantity sold"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={line.quantitySold}
-                    onChange={(event) =>
-                      setOrderLines(
-                        orderLines.map((item, i) =>
-                          i === index
-                            ? { ...item, quantitySold: Number(event.target.value) }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                  <Input
-                    aria-label="Discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.discount}
-                    onChange={(event) =>
-                      setOrderLines(
-                        orderLines.map((item, i) =>
-                          i === index ? { ...item, discount: Number(event.target.value) } : item,
-                        ),
-                      )
-                    }
-                  />
+                  <div>
+                    <Label>Menu item</Label>
+                    <Select
+                      value={line.menuItemId}
+                      onValueChange={(value) =>
+                        setOrderLines(
+                          orderLines.map((item, i) =>
+                            i === index
+                              ? { ...item, menuItemId: value, cookingBatchId: undefined }
+                              : item,
+                          ),
+                        )
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select menu item" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {menus
+                          .filter((menu) => menu.isAvailable)
+                          .map((menu) => (
+                            <SelectItem key={menu._id} value={menu._id}>
+                              {menu.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Amount ordered</Label>
+                    <Input
+                      aria-label="Amount ordered"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={line.quantitySold}
+                      onChange={(event) =>
+                        setOrderLines(
+                          orderLines.map((item, i) =>
+                            i === index
+                              ? { ...item, quantitySold: Number(event.target.value) }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
+                    className="self-end"
                     disabled={orderLines.length === 1}
                     onClick={() => setOrderLines(orderLines.filter((_, i) => i !== index))}
                   >
                     <Icon icon="solar:trash-bin-trash-linear" />
                   </Button>
-                  <div className="sm:col-span-4">
+                  <div className="sm:col-span-3">
                     <Label>Prepared batch (optional)</Label>
                     <Select
                       value={line.cookingBatchId}
@@ -848,12 +873,6 @@ export function KarenderiyaPage() {
                   </div>
                 </div>
               ))}
-              <div className="grid grid-cols-[1fr_90px_100px_auto] gap-2 text-[10px] uppercase tracking-wide text-stone-400">
-                <span>Menu</span>
-                <span>Qty</span>
-                <span>Discount</span>
-                <span />
-              </div>
             </div>
             <div className="sm:col-span-2">
               <Label>Notes</Label>
