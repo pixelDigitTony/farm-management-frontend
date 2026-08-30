@@ -45,6 +45,7 @@ export const sessionUserStore = {
 };
 
 let refreshPromise: Promise<string | null> | null = null;
+const refreshLockName = "miss-v-auth-refresh";
 
 async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -68,19 +69,38 @@ async function performRequest<T>(path: string, options: RequestInit = {}): Promi
   return body as T;
 }
 
-async function refreshAccessToken() {
+async function runWithRefreshLock<T>(callback: () => Promise<T>) {
+  if (!("locks" in navigator)) return callback();
+  return navigator.locks.request(refreshLockName, callback);
+}
+
+async function refreshAccessToken(failedToken: string | null) {
   if (!refreshPromise) {
-    refreshPromise = fetch(`${API_URL}/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
+    refreshPromise = runWithRefreshLock(async () => {
+      const currentToken = tokenStore.get();
+      if (currentToken && currentToken !== failedToken) return currentToken;
+
+      const refreshRequest = () =>
+        fetch(`${API_URL}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        });
+      let response = await refreshRequest();
+      if (response.status === 409) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        const concurrentlyRefreshedToken = tokenStore.get();
+        if (concurrentlyRefreshedToken && concurrentlyRefreshedToken !== failedToken) {
+          return concurrentlyRefreshedToken;
+        }
+        response = await refreshRequest();
+      }
+      if (!response.ok) return null;
+      const body = (await response.json()) as { token: string };
+      tokenStore.set(body.token);
+      return body.token;
     })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        const body = (await response.json()) as { token: string };
-        tokenStore.set(body.token);
-        return body.token;
-      })
+      .catch(() => null)
       .finally(() => {
         refreshPromise = null;
       });
@@ -88,13 +108,18 @@ async function refreshAccessToken() {
   return refreshPromise;
 }
 
+export function restoreAccessToken() {
+  return refreshAccessToken(null);
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const requestToken = tokenStore.get();
   try {
     return await performRequest<T>(path, options);
   } catch (error) {
     const isAuthOperation = path.startsWith("/auth/login") || path.startsWith("/auth/register");
     if (error instanceof ApiError && error.status === 401 && !isAuthOperation) {
-      const refreshed = await refreshAccessToken();
+      const refreshed = await refreshAccessToken(requestToken);
       if (refreshed) return performRequest<T>(path, options);
       tokenStore.clear();
     }

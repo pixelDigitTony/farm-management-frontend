@@ -1,7 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { api, type SessionUser, sessionUserStore, tokenStore } from "@/api/client";
+import {
+  api,
+  restoreAccessToken,
+  type SessionUser,
+  sessionUserStore,
+  tokenStore,
+} from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { AppShell } from "@/layout/AppShell";
@@ -61,14 +67,15 @@ function Protected() {
   const session = useQuery({
     queryKey: ["session-user"],
     queryFn: async () => {
+      if (!tokenStore.get() && !(await restoreAccessToken())) {
+        throw new Error("No active session");
+      }
       const result = await api<{ owner: SessionUser }>("/auth/me");
       sessionUserStore.set(result.owner);
       return result.owner;
     },
-    enabled: Boolean(tokenStore.get()),
     retry: false,
   });
-  if (!tokenStore.get()) return <Navigate to="/login" replace />;
   if (session.isLoading) return <PageSkeleton />;
   if (session.isError || !session.data) {
     tokenStore.clear();
