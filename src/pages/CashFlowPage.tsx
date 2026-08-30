@@ -53,6 +53,83 @@ type CashTransaction = {
   amount: string;
   description: string;
 };
+
+const EXPENSE_CATEGORIES = [
+  "PIG_PURCHASE",
+  "FEED",
+  "MEDICINE",
+  "VETERINARY",
+  "SLAUGHTER",
+  "TRANSPORT",
+  "INGREDIENT",
+  "FUEL",
+  "UTILITIES",
+  "PACKAGING",
+  "REPAIR",
+  "SUPPLY",
+  "RENT",
+  "LIABILITY",
+  "OTHER",
+];
+
+function ExpenseCategorySelect({ defaultValue }: { defaultValue: string }) {
+  const [selected, setSelected] = useState(defaultValue);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const matchingCategories = EXPENSE_CATEGORIES.filter((category) =>
+    category.replaceAll("_", " ").toLowerCase().includes(query.trim().toLowerCase()),
+  );
+
+  return (
+    <div className="relative">
+      <input name="category" type="hidden" value={selected} />
+      <button
+        type="button"
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-pink-100 bg-white px-3 text-left text-sm outline-none focus:border-pink-600 focus:ring-3 focus:ring-pink-600/10"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+      >
+        {selected.replaceAll("_", " ")}
+        <Icon icon="solar:alt-arrow-down-linear" />
+      </button>
+      {open && (
+        <div className="absolute z-[70] mt-1 w-full rounded-xl border border-stone-200 bg-white p-2 shadow-xl">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search categories..."
+            aria-label="Search expense categories"
+            autoFocus
+          />
+          <div className="mt-2 max-h-56 overflow-y-auto" role="listbox" aria-label="Expense categories">
+            {matchingCategories.length ? (
+              matchingCategories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-pink-50 focus:bg-pink-50 focus:outline-none"
+                  onClick={() => {
+                    setSelected(category);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  role="option"
+                  aria-selected={category === selected}
+                >
+                  {category.replaceAll("_", " ")}
+                </button>
+              ))
+            ) : (
+              <p className="px-3 py-2 text-sm text-stone-500">No matching categories.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CashFlowPage() {
   const [open, setOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
@@ -378,33 +455,7 @@ export function CashFlowPage() {
             </div>
             <div>
               <Label>Category</Label>
-              <Select name="category" defaultValue={editing?.category ?? "FEED"}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[
-                    "PIG_PURCHASE",
-                    "FEED",
-                    "MEDICINE",
-                    "VETERINARY",
-                    "SLAUGHTER",
-                    "TRANSPORT",
-                    "INGREDIENT",
-                    "FUEL",
-                    "UTILITIES",
-                    "PACKAGING",
-                    "REPAIR",
-                    "SUPPLY",
-                    "RENT",
-                    "OTHER",
-                  ].map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {v.replaceAll("_", " ")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ExpenseCategorySelect defaultValue={editing?.category ?? "FEED"} />
             </div>
             <div>
               <Label>Date</Label>
@@ -530,6 +581,7 @@ export function CashFlowPage() {
                     "OWNER_WITHDRAWAL",
                     "ACCOUNT_TRANSFER",
                     "REFUND",
+                    "DEBIT",
                     "OTHER",
                   ].map((value) => (
                     <SelectItem key={value} value={value}>
