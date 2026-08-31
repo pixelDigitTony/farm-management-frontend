@@ -1,11 +1,16 @@
 import { Icon } from "@iconify/react";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
 import { formatPeso } from "@/lib/utils";
-import type { LandingMenuItem, LandingPageComponent, LandingPageTheme } from "@/types/landing-page";
+import type {
+  LandingMenuItem,
+  LandingPageComponent,
+  LandingPageSection,
+  LandingPageTheme,
+} from "@/types/landing-page";
 
 type LandingPageRendererProps = {
   theme: LandingPageTheme;
-  components: LandingPageComponent[];
+  sections: LandingPageSection[];
   menuItems: LandingMenuItem[];
   compact?: boolean;
 };
@@ -73,17 +78,19 @@ function MenuSection({
   menuItems,
   theme,
   previewDevice,
+  inSection,
 }: {
   component: Extract<LandingPageComponent, { type: "MENU" }>;
   menuItems: LandingMenuItem[];
   theme: LandingPageTheme;
   previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
+  inSection?: boolean;
 }) {
   const selected = component.content.menuItemIds
     .map((id) => menuItems.find((item) => item._id === id))
     .filter((item): item is LandingMenuItem => Boolean(item));
   return (
-    <section id="menu" className="px-6 py-12 sm:px-10">
+    <section id="menu" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
       <div className="mx-auto max-w-6xl">
         <h2 className="text-3xl font-bold">{component.content.heading}</h2>
         {component.content.body && (
@@ -157,16 +164,18 @@ export function LandingPageComponentView({
   menuItems,
   theme,
   previewDevice,
+  inSection = false,
 }: {
   component: LandingPageComponent;
   menuItems: LandingMenuItem[];
   theme: LandingPageTheme;
   previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
+  inSection?: boolean;
 }) {
   if (component.type === "HERO")
     return (
       <section
-        className={`grid min-h-[420px] items-center gap-8 px-6 py-14 sm:px-10 ${previewDevice === "MOBILE" ? "grid-cols-1" : previewDevice ? "grid-cols-2" : "lg:grid-cols-2"}`}
+        className={`grid min-h-[420px] items-center gap-8 ${inSection ? "" : "px-6 py-14 sm:px-10"} ${previewDevice === "MOBILE" ? "grid-cols-1" : previewDevice ? "grid-cols-2" : "lg:grid-cols-2"}`}
       >
         <div className="mx-auto w-full max-w-xl lg:ml-auto lg:mr-0">
           {component.content.eyebrow && (
@@ -216,7 +225,7 @@ export function LandingPageComponentView({
   if (component.type === "TEXT")
     return (
       <section
-        className={`px-6 py-12 sm:px-10 ${component.content.alignment === "CENTER" ? "text-center" : ""}`}
+        className={`${inSection ? "" : "px-6 py-12 sm:px-10"} ${component.content.alignment === "CENTER" ? "text-center" : ""}`}
       >
         <div className="mx-auto max-w-4xl">
           <h2 className="text-3xl font-bold">{component.content.heading}</h2>
@@ -231,11 +240,12 @@ export function LandingPageComponentView({
         menuItems={menuItems}
         theme={theme}
         previewDevice={previewDevice}
+        inSection={inSection}
       />
     );
   if (component.type === "GALLERY")
     return (
-      <section className="px-6 py-12 sm:px-10">
+      <section className={inSection ? "" : "px-6 py-12 sm:px-10"}>
         <div className="mx-auto max-w-6xl">
           <h2 className="text-3xl font-bold">{component.content.heading}</h2>
           {component.content.mediaUrls.length ? (
@@ -265,7 +275,7 @@ export function LandingPageComponentView({
     );
   if (component.type === "CONTACT")
     return (
-      <section id="contact" className="px-6 py-12 sm:px-10">
+      <section id="contact" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
         <div
           className="mx-auto grid max-w-5xl gap-8 rounded-3xl p-8 sm:grid-cols-2"
           style={{ background: theme.surfaceColor }}
@@ -343,7 +353,7 @@ export function LandingPageComponentView({
       </section>
     );
   return (
-    <section className="px-6 py-12 text-center sm:px-10">
+    <section className={`${inSection ? "" : "px-6 py-12 sm:px-10"} text-center`}>
       <div
         className="mx-auto max-w-4xl rounded-3xl px-8 py-12 text-white"
         style={{ background: theme.primaryColor }}
@@ -365,11 +375,15 @@ export function LandingPageComponentView({
 
 export function LandingPageRenderer({
   theme,
-  components,
+  sections,
   menuItems,
   compact = false,
 }: LandingPageRendererProps) {
-  const enabled = components.filter((component) => component.enabled);
+  const enabledSections = sections.filter((section) => section.enabled);
+  const enabledCount = enabledSections.reduce(
+    (count, section) => count + section.components.filter((component) => component.enabled).length,
+    0,
+  );
   return (
     <div
       className={`min-h-full overflow-hidden ${theme.fontStyle === "CLASSIC" ? "font-display" : "font-sans"}`}
@@ -379,23 +393,68 @@ export function LandingPageRenderer({
         fontSize: compact ? "0.82rem" : undefined,
       }}
     >
-      <div className="grid grid-cols-12">
-        {enabled.map((component) => (
+      {enabledSections.map((section) => {
+        const components = section.components.filter((component) => component.enabled);
+        const widthClass =
+          section.contentWidth === "FULL"
+            ? "max-w-none"
+            : section.contentWidth === "CONTAINED"
+              ? "mx-auto max-w-5xl"
+              : "mx-auto max-w-7xl";
+        const paddingClass =
+          section.padding === "NONE"
+            ? ""
+            : section.padding === "SMALL"
+              ? "px-4 py-5 sm:px-6"
+              : section.padding === "LARGE"
+                ? "px-6 py-16 sm:px-10"
+                : "px-5 py-10 sm:px-8";
+        const gapClass =
+          section.gap === "NONE"
+            ? "gap-0"
+            : section.gap === "SMALL"
+              ? "gap-3"
+              : section.gap === "LARGE"
+                ? "gap-10"
+                : "gap-6";
+        return (
           <div
-            key={component.id}
-            className={
-              component.width === "FULL"
-                ? "col-span-12"
-                : component.width === "HALF"
-                  ? "col-span-12 md:col-span-6"
-                  : "col-span-12 md:col-span-4"
-            }
+            key={section.id}
+            id={section.id}
+            style={{
+              background: section.backgroundColor || "transparent",
+              color: section.textColor || "inherit",
+            }}
           >
-            <LandingPageComponentView component={component} menuItems={menuItems} theme={theme} />
+            <div className={`${widthClass} ${paddingClass}`}>
+              <div className={`grid grid-cols-12 ${gapClass}`}>
+                {components.map((component) => (
+                  <div
+                    key={component.id}
+                    className={
+                      component.width === "FULL"
+                        ? "col-span-12"
+                        : component.width === "TWO_THIRDS"
+                          ? "col-span-12 md:col-span-8"
+                          : component.width === "HALF"
+                            ? "col-span-12 md:col-span-6"
+                            : "col-span-12 md:col-span-4"
+                    }
+                  >
+                    <LandingPageComponentView
+                      component={component}
+                      menuItems={menuItems}
+                      theme={theme}
+                      inSection
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
-      {!enabled.length && (
+        );
+      })}
+      {!enabledCount && (
         <div className="grid min-h-96 place-items-center p-8 text-center opacity-60">
           Add a component to start building your page.
         </div>

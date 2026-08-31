@@ -19,7 +19,7 @@ This project is an independent client application. It communicates with the Miss
 - Menu recipes, ingredient costing, target food cost, and selling-price guidance
 - Cooking batches and daily karenderiya sales
 - Dashboard summaries, reports, business settings, and searchable activity history
-- Owner landing-page builder with draggable components, variants, live preview, and publishing
+- Owner landing-page builder with custom sections, responsive component placement, variants, live preview, and publishing
 - Lazy-loaded application pages, loading skeletons, query errors, and an application error boundary
 
 ## Technology
@@ -117,7 +117,7 @@ For local development, the backend's console email provider prints the verificat
 | `/employees` | Employee management | Highest-role accounts, named roles, and QR registration links |
 | `/admin` | Super admin | Role-99 account approval queue |
 | `/join/:tokenId` | Invited registration | Create a sub-account from an opaque registration link |
-| `/landing-page` | Landing-page builder | Create variants and publish the owner-managed public site |
+| `/landing-page` | Landing-page builder | Arrange custom sections and components, create variants, and publish the public site |
 | `/site/:slug` | Public landing page | Local/fallback route when a wildcard domain is not configured |
 
 Protected pages render inside the application shell and redirect unauthenticated visitors to `/login`.

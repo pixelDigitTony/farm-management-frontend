@@ -10,6 +10,7 @@ import {
 } from "@dnd-kit/core";
 import {
   arrayMove,
+  rectSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -40,9 +41,15 @@ import type {
   LandingPageBuilderData,
   LandingPageComponent,
   LandingPageComponentType,
+  LandingPageSection,
   LandingPageVariant,
+  LandingPageVariantPayload,
 } from "@/types/landing-page";
-import { createLandingComponent } from "@/types/landing-page";
+import {
+  createLandingComponent,
+  createLandingSection,
+  normalizeLandingPageVariant,
+} from "@/types/landing-page";
 import { Header } from "./PigsPage";
 
 const componentChoices: Array<{ type: LandingPageComponentType; label: string; icon: string }> = [
@@ -54,23 +61,44 @@ const componentChoices: Array<{ type: LandingPageComponentType; label: string; i
   { type: "CTA", label: "Call to action", icon: "solar:cursor-square-linear" },
 ];
 
-function PaletteItem({ choice }: { choice: (typeof componentChoices)[number] }) {
+type LandingPageBuilderPayload = Omit<LandingPageBuilderData, "variants"> & {
+  variants: LandingPageVariantPayload[];
+};
+
+function PaletteItem({
+  choice,
+  onAdd,
+}: {
+  choice: (typeof componentChoices)[number];
+  onAdd: () => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `palette:${choice.type}`,
   });
   return (
-    <button
+    <div
       ref={setNodeRef}
-      type="button"
-      className="flex w-full items-center gap-3 rounded-xl border border-pink-100 bg-white px-3 py-3 text-left text-sm font-semibold shadow-sm hover:border-pink-300 hover:bg-pink-50"
+      className="flex w-full items-center rounded-xl border border-pink-100 bg-white text-left text-sm font-semibold shadow-sm hover:border-pink-300 hover:bg-pink-50"
       style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.5 : 1 }}
-      {...listeners}
-      {...attributes}
     >
-      <Icon icon={choice.icon} className="size-5 text-pink-700" />
-      {choice.label}
-      <Icon icon="solar:hamburger-menu-linear" className="ml-auto text-stone-300" />
-    </button>
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left"
+        onClick={onAdd}
+      >
+        <Icon icon={choice.icon} className="size-5 shrink-0 text-pink-700" />
+        <span className="truncate">{choice.label}</span>
+      </button>
+      <button
+        type="button"
+        className="cursor-grab p-3 text-stone-300 hover:text-pink-700"
+        aria-label={`Drag ${choice.label} component`}
+        {...listeners}
+        {...attributes}
+      >
+        <Icon icon="solar:hamburger-menu-linear" />
+      </button>
+    </div>
   );
 }
 
@@ -101,7 +129,7 @@ function SortableComponent({
   return (
     <div
       ref={setNodeRef}
-      className={`group relative border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : device === "TABLET" || component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
+      className={`group relative border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : component.width === "TWO_THIRDS" ? "col-span-8" : component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -163,6 +191,7 @@ function SortableComponent({
         menuItems={menuItems}
         theme={variant.theme}
         previewDevice={device}
+        inSection
       />
     </div>
   );
@@ -227,9 +256,9 @@ function ComponentSettings({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {["FULL", "HALF", "THIRD"].map((value) => (
+            {["FULL", "TWO_THIRDS", "HALF", "THIRD"].map((value) => (
               <SelectItem key={value} value={value}>
-                {value}
+                {value.replace("_", " ")}
               </SelectItem>
             ))}
           </SelectContent>
@@ -554,10 +583,298 @@ function ComponentSettings({
   );
 }
 
+function sectionWidthClass(section: LandingPageSection) {
+  if (section.contentWidth === "FULL") return "max-w-none";
+  if (section.contentWidth === "CONTAINED") return "mx-auto max-w-5xl";
+  return "mx-auto max-w-7xl";
+}
+
+function sectionPaddingClass(section: LandingPageSection) {
+  if (section.padding === "NONE") return "";
+  if (section.padding === "SMALL") return "px-4 py-5 sm:px-6";
+  if (section.padding === "LARGE") return "px-6 py-16 sm:px-10";
+  return "px-5 py-10 sm:px-8";
+}
+
+function sectionGapClass(section: LandingPageSection) {
+  if (section.gap === "NONE") return "gap-0";
+  if (section.gap === "SMALL") return "gap-3";
+  if (section.gap === "LARGE") return "gap-10";
+  return "gap-6";
+}
+
+function SectionSettings({
+  section,
+  theme,
+  onChange,
+}: {
+  section?: LandingPageSection;
+  theme: LandingPageVariant["theme"];
+  onChange: (section: LandingPageSection) => void;
+}) {
+  if (!section)
+    return (
+      <div className="rounded-2xl border border-dashed border-pink-200 p-5 text-center text-sm text-stone-500">
+        Select a section or component in the preview to edit its layout.
+      </div>
+    );
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-pink-700">
+            Selected section
+          </p>
+          <h3 className="font-display text-xl font-semibold">{section.name}</h3>
+        </div>
+        <Icon icon="solar:layers-minimalistic-linear" className="size-7 text-pink-300" />
+      </div>
+      <Field label="Section name">
+        <Input
+          value={section.name}
+          onChange={(event) => onChange({ ...section, name: event.target.value })}
+        />
+      </Field>
+      <Field label="Content width">
+        <Select
+          value={section.contentWidth}
+          onValueChange={(value) =>
+            onChange({
+              ...section,
+              contentWidth: value as LandingPageSection["contentWidth"],
+            })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="FULL">Full</SelectItem>
+            <SelectItem value="WIDE">Wide</SelectItem>
+            <SelectItem value="CONTAINED">Contained</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Padding">
+          <Select
+            value={section.padding}
+            onValueChange={(value) =>
+              onChange({ ...section, padding: value as LandingPageSection["padding"] })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {["NONE", "SMALL", "MEDIUM", "LARGE"].map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Component gap">
+          <Select
+            value={section.gap}
+            onValueChange={(value) =>
+              onChange({ ...section, gap: value as LandingPageSection["gap"] })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {["NONE", "SMALL", "MEDIUM", "LARGE"].map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Background">
+          <input
+            type="color"
+            className="h-10 w-full rounded-lg"
+            value={section.backgroundColor || theme.backgroundColor}
+            onChange={(event) => onChange({ ...section, backgroundColor: event.target.value })}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-1 w-full"
+            disabled={!section.backgroundColor}
+            onClick={() => onChange({ ...section, backgroundColor: "" })}
+          >
+            Use page color
+          </Button>
+        </Field>
+        <Field label="Text">
+          <input
+            type="color"
+            className="h-10 w-full rounded-lg"
+            value={section.textColor || theme.textColor}
+            onChange={(event) => onChange({ ...section, textColor: event.target.value })}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-1 w-full"
+            disabled={!section.textColor}
+            onClick={() => onChange({ ...section, textColor: "" })}
+          >
+            Use page color
+          </Button>
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+function SortableSection({
+  section,
+  variant,
+  menuItems,
+  selectedSectionId,
+  selectedComponentId,
+  device,
+  onSelectSection,
+  onSelectComponent,
+  onUpdateComponent,
+  onDuplicateComponent,
+  onRemoveComponent,
+  onToggle,
+  onDuplicate,
+  onRemove,
+}: {
+  section: LandingPageSection;
+  variant: LandingPageVariant;
+  menuItems: LandingPageBuilderData["menuItems"];
+  selectedSectionId?: string;
+  selectedComponentId?: string;
+  device: "DESKTOP" | "TABLET" | "MOBILE";
+  onSelectSection: () => void;
+  onSelectComponent: (componentId: string) => void;
+  onUpdateComponent: (component: LandingPageComponent) => void;
+  onDuplicateComponent: (component: LandingPageComponent) => void;
+  onRemoveComponent: (component: LandingPageComponent) => void;
+  onToggle: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `section:${section.id}`,
+  });
+  const { setNodeRef: setAreaRef, isOver } = useDroppable({ id: `section-area:${section.id}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`relative border-2 transition-colors ${selectedSectionId === section.id ? "border-pink-500" : "border-transparent hover:border-pink-200"} ${section.enabled ? "" : "opacity-45"}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : undefined,
+      }}
+    >
+      <div className="flex items-center gap-2 border-b border-pink-100 bg-pink-50/95 px-3 py-2 text-xs text-stone-600">
+        <button
+          type="button"
+          className="cursor-grab rounded-lg p-1.5 hover:bg-white"
+          aria-label={`Move ${section.name} section`}
+          {...attributes}
+          {...listeners}
+        >
+          <Icon icon="solar:hamburger-menu-linear" />
+        </button>
+        <button
+          type="button"
+          className="min-w-0 flex-1 truncate text-left font-bold"
+          onClick={onSelectSection}
+        >
+          {section.name}
+        </button>
+        <span>{section.components.length} components</span>
+        <button
+          type="button"
+          className="rounded-lg p-1.5 hover:bg-white"
+          aria-label={section.enabled ? "Hide section" : "Show section"}
+          onClick={onToggle}
+        >
+          <Icon icon={section.enabled ? "solar:eye-linear" : "solar:eye-closed-linear"} />
+        </button>
+        <button
+          type="button"
+          className="rounded-lg p-1.5 hover:bg-white"
+          aria-label="Duplicate section"
+          onClick={onDuplicate}
+        >
+          <Icon icon="solar:copy-linear" />
+        </button>
+        <button
+          type="button"
+          className="rounded-lg p-1.5 text-red-600 hover:bg-red-50"
+          aria-label="Remove section"
+          onClick={onRemove}
+        >
+          <Icon icon="solar:trash-bin-trash-linear" />
+        </button>
+      </div>
+      <div
+        ref={setAreaRef}
+        className={`${isOver ? "ring-4 ring-inset ring-pink-300/60" : ""}`}
+        style={{
+          background: section.backgroundColor || variant.theme.backgroundColor,
+          color: section.textColor || variant.theme.textColor,
+        }}
+      >
+        <div className={`${sectionWidthClass(section)} ${sectionPaddingClass(section)}`}>
+          <SortableContext
+            items={section.components.map((component) => component.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className={`grid min-h-20 grid-cols-12 ${sectionGapClass(section)}`}>
+              {section.components.map((component) => (
+                <SortableComponent
+                  key={component.id}
+                  component={component}
+                  variant={variant}
+                  menuItems={menuItems}
+                  selected={selectedComponentId === component.id}
+                  onSelect={() => onSelectComponent(component.id)}
+                  onToggle={() => onUpdateComponent({ ...component, enabled: !component.enabled })}
+                  onDuplicate={() => onDuplicateComponent(component)}
+                  onRemove={() => onRemoveComponent(component)}
+                  device={device}
+                />
+              ))}
+              {!section.components.length && (
+                <button
+                  type="button"
+                  className="col-span-12 grid min-h-28 place-items-center rounded-xl border-2 border-dashed border-pink-200 bg-white/60 p-4 text-sm font-semibold text-stone-400"
+                  onClick={onSelectSection}
+                >
+                  Drop or add components to {section.name}
+                </button>
+              )}
+            </div>
+          </SortableContext>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LandingPageBuilderPage() {
   const queryClient = useQueryClient();
   const [variantId, setVariantId] = useState("");
   const [draft, setDraft] = useState<LandingPageVariant>();
+  const [selectedSectionId, setSelectedSectionId] = useState<string>();
   const [selectedComponentId, setSelectedComponentId] = useState<string>();
   const [device, setDevice] = useState<"DESKTOP" | "TABLET" | "MOBILE">("DESKTOP");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -568,11 +885,12 @@ export function LandingPageBuilderPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const { setNodeRef: setCanvasRef } = useDroppable({ id: "builder-canvas" });
-
   const builder = useQuery({
     queryKey: ["landing-page-builder"],
-    queryFn: () => api<LandingPageBuilderData>("/landing-page"),
+    queryFn: async () => {
+      const data = await api<LandingPageBuilderPayload>("/landing-page");
+      return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
+    },
   });
   useEffect(() => {
     if (!builder.data?.variants.length || draft) return;
@@ -580,6 +898,7 @@ export function LandingPageBuilderPage() {
     if (!first) return;
     setVariantId(first._id);
     setDraft(structuredClone(first));
+    setSelectedSectionId(first.sections[0]?.id);
   }, [builder.data, draft]);
 
   function commit(next: LandingPageVariant) {
@@ -608,6 +927,7 @@ export function LandingPageBuilderPage() {
     if (!next) return;
     setVariantId(id);
     setDraft(structuredClone(next));
+    setSelectedSectionId(next.sections[0]?.id);
     setSelectedComponentId(undefined);
     setDirty(false);
     undoStack.current = [];
@@ -617,34 +937,128 @@ export function LandingPageBuilderPage() {
     if (!draft) return;
     commit({
       ...draft,
-      components: draft.components.map((item) => (item.id === component.id ? component : item)),
+      sections: draft.sections.map((section) => ({
+        ...section,
+        components: section.components.map((item) => (item.id === component.id ? component : item)),
+      })),
     });
+  }
+  function updateSection(section: LandingPageSection) {
+    if (!draft) return;
+    commit({
+      ...draft,
+      sections: draft.sections.map((item) => (item.id === section.id ? section : item)),
+    });
+  }
+  function componentCount(variant = draft) {
+    return variant?.sections.reduce((count, section) => count + section.components.length, 0) ?? 0;
+  }
+  function resolveSectionId(dropId: string) {
+    if (!draft) return undefined;
+    if (dropId.startsWith("section-area:")) return dropId.replace("section-area:", "");
+    if (dropId.startsWith("section:")) return dropId.replace("section:", "");
+    return draft.sections.find((section) =>
+      section.components.some((component) => component.id === dropId),
+    )?.id;
+  }
+  function addComponent(type: LandingPageComponentType, requestedSectionId?: string) {
+    if (!draft) return;
+    if (componentCount() >= 30) return toast.error("Use no more than 30 components");
+    const sectionId = requestedSectionId ?? selectedSectionId ?? draft.sections[0]?.id;
+    if (!sectionId) return;
+    const component = createLandingComponent(type);
+    commit({
+      ...draft,
+      sections: draft.sections.map((section) =>
+        section.id === sectionId
+          ? { ...section, components: [...section.components, component] }
+          : section,
+      ),
+    });
+    setSelectedSectionId(sectionId);
+    setSelectedComponentId(component.id);
   }
   function onDragEnd(event: DragEndEvent) {
     if (!draft || !event.over) return;
     const activeId = String(event.active.id);
     const overId = String(event.over.id);
+    const targetSectionId = resolveSectionId(overId);
+    if (activeId.startsWith("section:")) {
+      const sectionId = activeId.replace("section:", "");
+      if (!targetSectionId || sectionId === targetSectionId) return;
+      const oldIndex = draft.sections.findIndex((section) => section.id === sectionId);
+      const newIndex = draft.sections.findIndex((section) => section.id === targetSectionId);
+      if (oldIndex >= 0 && newIndex >= 0)
+        commit({ ...draft, sections: arrayMove(draft.sections, oldIndex, newIndex) });
+      return;
+    }
     if (activeId.startsWith("palette:")) {
+      if (componentCount() >= 30) return toast.error("Use no more than 30 components");
       const component = createLandingComponent(
         activeId.replace("palette:", "") as LandingPageComponentType,
       );
-      const index = draft.components.findIndex((item) => item.id === overId);
-      const next = [...draft.components];
-      next.splice(index >= 0 ? index : next.length, 0, component);
-      commit({ ...draft, components: next });
+      const sectionId = targetSectionId ?? selectedSectionId ?? draft.sections[0]?.id;
+      if (!sectionId) return;
+      commit({
+        ...draft,
+        sections: draft.sections.map((section) => {
+          if (section.id !== sectionId) return section;
+          const index = section.components.findIndex((item) => item.id === overId);
+          const components = [...section.components];
+          components.splice(index >= 0 ? index : components.length, 0, component);
+          return { ...section, components };
+        }),
+      });
+      setSelectedSectionId(sectionId);
       setSelectedComponentId(component.id);
       return;
     }
     if (activeId === overId) return;
-    const oldIndex = draft.components.findIndex((item) => item.id === activeId);
-    const newIndex = draft.components.findIndex((item) => item.id === overId);
-    if (oldIndex >= 0 && newIndex >= 0)
-      commit({ ...draft, components: arrayMove(draft.components, oldIndex, newIndex) });
+    const sourceSection = draft.sections.find((section) =>
+      section.components.some((component) => component.id === activeId),
+    );
+    if (!sourceSection || !targetSectionId) return;
+    if (sourceSection.id === targetSectionId) {
+      const oldIndex = sourceSection.components.findIndex((item) => item.id === activeId);
+      const overIndex = sourceSection.components.findIndex((item) => item.id === overId);
+      const newIndex = overIndex >= 0 ? overIndex : sourceSection.components.length - 1;
+      if (oldIndex >= 0 && oldIndex !== newIndex)
+        commit({
+          ...draft,
+          sections: draft.sections.map((section) =>
+            section.id === sourceSection.id
+              ? { ...section, components: arrayMove(section.components, oldIndex, newIndex) }
+              : section,
+          ),
+        });
+      return;
+    }
+    const moving = sourceSection.components.find((component) => component.id === activeId);
+    if (!moving) return;
+    commit({
+      ...draft,
+      sections: draft.sections.map((section) => {
+        if (section.id === sourceSection.id)
+          return {
+            ...section,
+            components: section.components.filter((component) => component.id !== activeId),
+          };
+        if (section.id !== targetSectionId) return section;
+        const index = section.components.findIndex((component) => component.id === overId);
+        const components = [...section.components];
+        components.splice(index >= 0 ? index : components.length, 0, moving);
+        return { ...section, components };
+      }),
+    });
+    setSelectedSectionId(targetSectionId);
   }
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["landing-page-builder"] });
   const initialize = useMutation({
-    mutationFn: () => api<LandingPageBuilderData>("/landing-page", { method: "POST" }),
+    mutationFn: async () => {
+      const data = await api<LandingPageBuilderPayload>("/landing-page", { method: "POST" });
+      return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(["landing-page-builder"], data);
       toast.success("Landing-page builder created");
@@ -652,15 +1066,17 @@ export function LandingPageBuilderPage() {
     onError: (error) => toast.error(error.message),
   });
   const save = useMutation({
-    mutationFn: (variant: LandingPageVariant) =>
-      api<LandingPageVariant>(`/landing-page/variants/${variant._id}`, {
+    mutationFn: async (variant: LandingPageVariant) => {
+      const saved = await api<LandingPageVariantPayload>(`/landing-page/variants/${variant._id}`, {
         method: "PATCH",
         body: JSON.stringify({
           name: variant.name,
           theme: variant.theme,
-          components: variant.components,
+          sections: variant.sections,
         }),
-      }),
+      });
+      return normalizeLandingPageVariant(saved);
+    },
     onSuccess: (saved) => {
       setDraft(structuredClone(saved));
       setDirty(false);
@@ -679,7 +1095,7 @@ export function LandingPageBuilderPage() {
           body: JSON.stringify({
             name: variant.name,
             theme: variant.theme,
-            components: variant.components,
+            sections: variant.sections,
           }),
         });
       return api(`/landing-page/variants/${variant._id}/publish`, { method: "POST" });
@@ -702,15 +1118,19 @@ export function LandingPageBuilderPage() {
     onError: (error) => toast.error(error.message),
   });
   const createVariant = useMutation({
-    mutationFn: ({ name, source }: { name: string; source?: string }) =>
-      api<LandingPageVariant>("/landing-page/variants", {
+    mutationFn: async ({ name, source }: { name: string; source?: string }) => {
+      const created = await api<LandingPageVariantPayload>("/landing-page/variants", {
         method: "POST",
         body: JSON.stringify({ name, duplicateFromId: source }),
-      }),
+      });
+      return normalizeLandingPageVariant(created);
+    },
     onSuccess: (created) => {
       void refresh();
       setVariantId(created._id);
       setDraft(structuredClone(created));
+      setSelectedSectionId(created.sections[0]?.id);
+      setSelectedComponentId(undefined);
       setDirty(false);
       toast.success("Variant created");
     },
@@ -729,6 +1149,8 @@ export function LandingPageBuilderPage() {
       );
       setDraft(undefined);
       setVariantId("");
+      setSelectedSectionId(undefined);
+      setSelectedComponentId(undefined);
       setDirty(false);
       void refresh();
       toast.success("Variant deleted");
@@ -778,7 +1200,10 @@ export function LandingPageBuilderPage() {
     );
   if (!draft) return <PageSkeleton />;
   const page = builder.data.page;
-  const selected = draft.components.find((item) => item.id === selectedComponentId);
+  const selectedSection = draft.sections.find((section) => section.id === selectedSectionId);
+  const selected = draft.sections
+    .flatMap((section) => section.components)
+    .find((item) => item.id === selectedComponentId);
   const previewWidth =
     device === "MOBILE" ? "max-w-[390px]" : device === "TABLET" ? "max-w-[760px]" : "max-w-full";
 
@@ -887,11 +1312,38 @@ export function LandingPageBuilderPage() {
         <div className="grid gap-4 xl:grid-cols-[210px_minmax(0,1fr)_320px]">
           <Card className="h-fit p-4 xl:sticky xl:top-20">
             <p className="text-xs font-bold uppercase tracking-widest text-stone-400">Components</p>
-            <p className="mt-1 text-sm text-stone-500">Drag into the preview</p>
+            <p className="mt-1 text-sm text-stone-500">Drag or click to add</p>
             <div className="mt-4 space-y-2">
               {componentChoices.map((choice) => (
-                <PaletteItem key={choice.type} choice={choice} />
+                <PaletteItem
+                  key={choice.type}
+                  choice={choice}
+                  onAdd={() => addComponent(choice.type)}
+                />
               ))}
+            </div>
+            <div className="mt-5 border-t border-pink-100 pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
+                  Sections
+                </p>
+                <span className="text-xs text-stone-400">{draft.sections.length}/20</span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3 w-full"
+                disabled={draft.sections.length >= 20}
+                onClick={() => {
+                  const section = createLandingSection(`Section ${draft.sections.length + 1}`);
+                  commit({ ...draft, sections: [...draft.sections, section] });
+                  setSelectedSectionId(section.id);
+                  setSelectedComponentId(undefined);
+                }}
+              >
+                <Icon icon="solar:add-square-linear" /> Add section
+              </Button>
             </div>
             <div className="mt-5 border-t border-pink-100 pt-4">
               <p className="text-xs font-bold uppercase tracking-widest text-stone-400">Theme</p>
@@ -1045,46 +1497,117 @@ export function LandingPageBuilderPage() {
             </div>
             <div className="overflow-auto bg-stone-100 p-3 sm:p-5">
               <div
-                ref={setCanvasRef}
-                className={`mx-auto grid min-h-[640px] grid-cols-12 content-start overflow-hidden bg-white shadow-xl transition-[max-width] ${previewWidth}`}
+                className={`mx-auto min-h-[640px] overflow-hidden bg-white shadow-xl transition-[max-width] ${previewWidth}`}
+                style={{ background: draft.theme.backgroundColor, color: draft.theme.textColor }}
               >
                 <SortableContext
-                  items={draft.components.map((item) => item.id)}
+                  items={draft.sections.map((section) => `section:${section.id}`)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {draft.components.map((component) => (
-                    <SortableComponent
-                      key={component.id}
-                      component={component}
+                  {draft.sections.map((section) => (
+                    <SortableSection
+                      key={section.id}
+                      section={section}
                       variant={draft}
                       menuItems={builder.data.menuItems}
-                      selected={selectedComponentId === component.id}
-                      onSelect={() => setSelectedComponentId(component.id)}
-                      onToggle={() =>
-                        updateComponent({ ...component, enabled: !component.enabled })
-                      }
-                      onDuplicate={() => {
+                      selectedSectionId={selectedSectionId}
+                      selectedComponentId={selectedComponentId}
+                      onSelectSection={() => {
+                        setSelectedSectionId(section.id);
+                        setSelectedComponentId(undefined);
+                      }}
+                      onSelectComponent={(componentId) => {
+                        setSelectedSectionId(section.id);
+                        setSelectedComponentId(componentId);
+                      }}
+                      onUpdateComponent={updateComponent}
+                      onDuplicateComponent={(component) => {
+                        if (componentCount() >= 30)
+                          return toast.error("Use no more than 30 components");
                         const copy = { ...structuredClone(component), id: crypto.randomUUID() };
-                        const index = draft.components.findIndex(
+                        const index = section.components.findIndex(
                           (item) => item.id === component.id,
                         );
                         commit({
                           ...draft,
-                          components: [
-                            ...draft.components.slice(0, index + 1),
-                            copy,
-                            ...draft.components.slice(index + 1),
-                          ],
+                          sections: draft.sections.map((item) =>
+                            item.id === section.id
+                              ? {
+                                  ...item,
+                                  components: [
+                                    ...item.components.slice(0, index + 1),
+                                    copy,
+                                    ...item.components.slice(index + 1),
+                                  ],
+                                }
+                              : item,
+                          ),
                         });
+                        setSelectedSectionId(section.id);
                         setSelectedComponentId(copy.id);
                       }}
-                      onRemove={() => {
-                        if (draft.components.length <= 1)
+                      onRemoveComponent={(component) => {
+                        if (componentCount() <= 1)
                           return toast.error("Keep at least one component");
                         commit({
                           ...draft,
-                          components: draft.components.filter((item) => item.id !== component.id),
+                          sections: draft.sections.map((item) =>
+                            item.id === section.id
+                              ? {
+                                  ...item,
+                                  components: item.components.filter(
+                                    (entry) => entry.id !== component.id,
+                                  ),
+                                }
+                              : item,
+                          ),
                         });
+                        setSelectedComponentId(undefined);
+                      }}
+                      onToggle={() => updateSection({ ...section, enabled: !section.enabled })}
+                      onDuplicate={() => {
+                        if (draft.sections.length >= 20)
+                          return toast.error("Use no more than 20 sections");
+                        if (componentCount() + section.components.length > 30)
+                          return toast.error("Use no more than 30 components");
+                        const copy = {
+                          ...structuredClone(section),
+                          id: crypto.randomUUID(),
+                          name: `${section.name} copy`,
+                          components: section.components.map((component) => ({
+                            ...component,
+                            id: crypto.randomUUID(),
+                          })),
+                        };
+                        const index = draft.sections.findIndex((item) => item.id === section.id);
+                        commit({
+                          ...draft,
+                          sections: [
+                            ...draft.sections.slice(0, index + 1),
+                            copy,
+                            ...draft.sections.slice(index + 1),
+                          ],
+                        });
+                        setSelectedSectionId(copy.id);
+                        setSelectedComponentId(undefined);
+                      }}
+                      onRemove={() => {
+                        if (draft.sections.length <= 1)
+                          return toast.error("Keep at least one section");
+                        if (componentCount() - section.components.length < 1)
+                          return toast.error("Keep at least one component on the page");
+                        if (
+                          section.components.length &&
+                          !window.confirm(
+                            `Delete ${section.name} and its ${section.components.length} components?`,
+                          )
+                        )
+                          return;
+                        const nextSections = draft.sections.filter(
+                          (item) => item.id !== section.id,
+                        );
+                        commit({ ...draft, sections: nextSections });
+                        setSelectedSectionId(nextSections[0]?.id);
                         setSelectedComponentId(undefined);
                       }}
                       device={device}
@@ -1096,11 +1619,19 @@ export function LandingPageBuilderPage() {
           </Card>
 
           <Card className="h-fit max-h-[calc(100vh-6rem)] overflow-y-auto p-4 xl:sticky xl:top-20">
-            <ComponentSettings
-              component={selected}
-              menuItems={builder.data.menuItems}
-              onChange={updateComponent}
-            />
+            {selected ? (
+              <ComponentSettings
+                component={selected}
+                menuItems={builder.data.menuItems}
+                onChange={updateComponent}
+              />
+            ) : (
+              <SectionSettings
+                section={selectedSection}
+                theme={draft.theme}
+                onChange={updateSection}
+              />
+            )}
           </Card>
         </div>
       </div>

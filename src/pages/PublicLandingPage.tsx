@@ -4,14 +4,19 @@ import { useParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { LandingPageRenderer } from "@/components/landing-page/LandingPageRenderer";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import type { LandingMenuItem, LandingPageComponent, LandingPageTheme } from "@/types/landing-page";
+import type { LandingMenuItem, LandingPageSection, LandingPageTheme } from "@/types/landing-page";
+import { normalizeLandingSections } from "@/types/landing-page";
 
 type PublicLandingPage = {
   slug: string;
   siteTitle: string;
   seoDescription: string;
   publishedAt: string;
-  variant: { theme: LandingPageTheme; components: LandingPageComponent[] };
+  variant: {
+    theme: LandingPageTheme;
+    sections?: LandingPageSection[];
+    components?: LandingPageSection["components"];
+  };
   menuItems: LandingMenuItem[];
 };
 
@@ -56,7 +61,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   return (
     <LandingPageRenderer
       theme={page.data.variant.theme}
-      components={page.data.variant.components}
+      sections={normalizeLandingSections(page.data.variant)}
       menuItems={page.data.menuItems}
     />
   );

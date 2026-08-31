@@ -8,7 +8,9 @@ export type LandingPageTheme = {
 };
 
 export type LandingPageComponentType = "HERO" | "TEXT" | "MENU" | "GALLERY" | "CONTACT" | "CTA";
-export type LandingPageComponentWidth = "FULL" | "HALF" | "THIRD";
+export type LandingPageComponentWidth = "FULL" | "TWO_THIRDS" | "HALF" | "THIRD";
+export type LandingPageSectionContentWidth = "FULL" | "WIDE" | "CONTAINED";
+export type LandingPageSectionSpacing = "NONE" | "SMALL" | "MEDIUM" | "LARGE";
 
 type BaseComponent<T extends LandingPageComponentType, C> = {
   id: string;
@@ -70,13 +72,30 @@ export type LandingPageComponent =
   | ContactComponent
   | CtaComponent;
 
+export type LandingPageSection = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  backgroundColor: string;
+  textColor: string;
+  contentWidth: LandingPageSectionContentWidth;
+  padding: LandingPageSectionSpacing;
+  gap: LandingPageSectionSpacing;
+  components: LandingPageComponent[];
+};
+
 export type LandingPageVariant = {
   _id: string;
   name: string;
   theme: LandingPageTheme;
-  components: LandingPageComponent[];
+  sections: LandingPageSection[];
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type LandingPageVariantPayload = Omit<LandingPageVariant, "sections"> & {
+  sections?: LandingPageSection[];
+  components?: LandingPageComponent[];
 };
 
 export type LandingPageRecord = {
@@ -163,4 +182,47 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
       buttonUrl: "#contact",
     },
   };
+}
+
+export function createLandingSection(
+  name = "New section",
+  components: LandingPageComponent[] = [],
+): LandingPageSection {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    enabled: true,
+    backgroundColor: "",
+    textColor: "",
+    contentWidth: "WIDE",
+    padding: "MEDIUM",
+    gap: "MEDIUM",
+    components,
+  };
+}
+
+export function normalizeLandingSections(source: {
+  sections?: LandingPageSection[];
+  components?: LandingPageComponent[];
+}): LandingPageSection[] {
+  if (source.sections?.length) return source.sections;
+  return [
+    {
+      id: "legacy-main-section",
+      name: "Main section",
+      enabled: true,
+      backgroundColor: "",
+      textColor: "",
+      contentWidth: "WIDE",
+      padding: "MEDIUM",
+      gap: "MEDIUM",
+      components: source.components ?? [],
+    },
+  ];
+}
+
+export function normalizeLandingPageVariant(
+  variant: LandingPageVariantPayload,
+): LandingPageVariant {
+  return { ...variant, sections: normalizeLandingSections(variant) };
 }
