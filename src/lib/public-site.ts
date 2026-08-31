@@ -3,12 +3,15 @@ const configuredBaseDomain = (import.meta.env.VITE_PUBLIC_SITE_BASE_DOMAIN ?? ""
   .toLowerCase()
   .replace(/^\.+|\.+$/g, "");
 
+const reservedPublicSiteSlugs = new Set(["api", "app", "www"]);
+
 export function getPublicSiteSlugFromHostname(hostname: string) {
   const normalizedHostname = hostname.trim().toLowerCase().replace(/\.$/, "");
   if (!configuredBaseDomain || normalizedHostname === configuredBaseDomain) return undefined;
   const suffix = `.${configuredBaseDomain}`;
   if (!normalizedHostname.endsWith(suffix)) return undefined;
   const slug = normalizedHostname.slice(0, -suffix.length);
+  if (reservedPublicSiteSlugs.has(slug)) return undefined;
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? slug : undefined;
 }
 
