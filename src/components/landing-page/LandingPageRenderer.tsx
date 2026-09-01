@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
 import { formatPeso } from "@/lib/utils";
 import type {
+  LandingCatalogItem,
   LandingMenuItem,
   LandingPageComponent,
   LandingPageSection,
@@ -12,6 +13,8 @@ type LandingPageRendererProps = {
   theme: LandingPageTheme;
   sections: LandingPageSection[];
   menuItems: LandingMenuItem[];
+  catalogItems?: LandingCatalogItem[];
+  onAddToCart?: (item: LandingCatalogItem) => void;
   compact?: boolean;
 };
 
@@ -79,12 +82,16 @@ function MenuSection({
   theme,
   previewDevice,
   inSection,
+  catalogItems,
+  onAddToCart,
 }: {
   component: Extract<LandingPageComponent, { type: "MENU" }>;
   menuItems: LandingMenuItem[];
   theme: LandingPageTheme;
   previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
   inSection?: boolean;
+  catalogItems: LandingCatalogItem[];
+  onAddToCart?: (item: LandingCatalogItem) => void;
 }) {
   const selected = component.content.menuItemIds
     .map((id) => menuItems.find((item) => item._id === id))
@@ -116,6 +123,10 @@ function MenuSection({
           >
             {selected.map((item) => {
               const media = getMenuMediaUrls(item)[0];
+              const catalogItem = catalogItems.find(
+                (candidate) =>
+                  candidate.sourceType === "MENU_ITEM" && candidate.sourceId === item._id,
+              );
               return (
                 <article
                   key={item._id}
@@ -144,6 +155,17 @@ function MenuSection({
                     <p className="mt-3 font-bold" style={{ color: theme.primaryColor }}>
                       {formatPeso(item.sellingPricePerServing ?? 0)}
                     </p>
+                    {onAddToCart && catalogItem && (
+                      <button
+                        type="button"
+                        className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ background: theme.primaryColor, borderRadius: radius(theme) }}
+                        disabled={!catalogItem.isAvailable}
+                        onClick={() => onAddToCart(catalogItem)}
+                      >
+                        {catalogItem.isAvailable ? "Add to cart" : "Unavailable"}
+                      </button>
+                    )}
                   </div>
                 </article>
               );
@@ -159,15 +181,129 @@ function MenuSection({
   );
 }
 
+function CatalogSection({
+  component,
+  catalogItems,
+  theme,
+  previewDevice,
+  inSection,
+  onAddToCart,
+}: {
+  component: Extract<LandingPageComponent, { type: "CATALOG" }>;
+  catalogItems: LandingCatalogItem[];
+  theme: LandingPageTheme;
+  previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
+  inSection?: boolean;
+  onAddToCart?: (item: LandingCatalogItem) => void;
+}) {
+  const selected = component.content.catalogItemRefs
+    .map((reference) =>
+      catalogItems.find(
+        (item) => item.sourceType === reference.sourceType && item.sourceId === reference.sourceId,
+      ),
+    )
+    .filter((item): item is LandingCatalogItem => Boolean(item));
+  return (
+    <section id="products" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
+      <div className="mx-auto max-w-6xl">
+        <h2 className="text-3xl font-bold">{component.content.heading}</h2>
+        {component.content.body && (
+          <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
+        )}
+        {selected.length ? (
+          <div
+            className={`mt-7 grid gap-5 ${previewDevice ? "" : component.content.columns === 4 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" : component.content.columns === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}
+            style={
+              previewDevice
+                ? {
+                    gridTemplateColumns: `repeat(${Math.min(
+                      previewDevice === "MOBILE"
+                        ? 1
+                        : previewDevice === "TABLET"
+                          ? 2
+                          : component.content.columns,
+                      selected.length,
+                    )}, minmax(0, 1fr))`,
+                  }
+                : undefined
+            }
+          >
+            {selected.map((item) => (
+              <article
+                key={item.key}
+                className="overflow-hidden border shadow-sm"
+                style={{
+                  background: theme.surfaceColor,
+                  borderColor: `${theme.primaryColor}25`,
+                  borderRadius: "1.25rem",
+                }}
+              >
+                {item.mediaUrls[0] && (
+                  <div className="h-44 overflow-hidden">
+                    <Media url={item.mediaUrls[0]} title={item.name} />
+                  </div>
+                )}
+                <div className="p-5">
+                  <p
+                    className="text-xs font-bold uppercase tracking-widest"
+                    style={{ color: theme.primaryColor }}
+                  >
+                    {item.category || item.productType.replaceAll("_", " ")}
+                  </p>
+                  <h3 className="mt-1 text-lg font-bold">{item.name}</h3>
+                  {item.description && (
+                    <p className="mt-2 line-clamp-2 text-sm opacity-65">{item.description}</p>
+                  )}
+                  <p className="mt-3 font-bold" style={{ color: theme.primaryColor }}>
+                    {item.variants.length ? "From " : ""}
+                    {formatPeso(
+                      item.variants.length
+                        ? Math.min(...item.variants.map((variant) => Number(variant.price)))
+                        : item.price,
+                    )}
+                  </p>
+                  {onAddToCart && (
+                    <button
+                      type="button"
+                      className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ background: theme.primaryColor, borderRadius: radius(theme) }}
+                      disabled={!item.isAvailable}
+                      onClick={() => onAddToCart(item)}
+                    >
+                      {item.isAvailable
+                        ? item.variants.length
+                          ? "Choose options"
+                          : "Add to cart"
+                        : "Unavailable"}
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
+            Select products to feature here.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function LandingPageComponentView({
   component,
   menuItems,
+  catalogItems = [],
+  onAddToCart,
   theme,
   previewDevice,
   inSection = false,
 }: {
   component: LandingPageComponent;
   menuItems: LandingMenuItem[];
+  catalogItems?: LandingCatalogItem[];
+  onAddToCart?: (item: LandingCatalogItem) => void;
   theme: LandingPageTheme;
   previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
   inSection?: boolean;
@@ -241,6 +377,19 @@ export function LandingPageComponentView({
         theme={theme}
         previewDevice={previewDevice}
         inSection={inSection}
+        catalogItems={catalogItems}
+        onAddToCart={onAddToCart}
+      />
+    );
+  if (component.type === "CATALOG")
+    return (
+      <CatalogSection
+        component={component}
+        catalogItems={catalogItems}
+        theme={theme}
+        previewDevice={previewDevice}
+        inSection={inSection}
+        onAddToCart={onAddToCart}
       />
     );
   if (component.type === "GALLERY")
@@ -377,6 +526,8 @@ export function LandingPageRenderer({
   theme,
   sections,
   menuItems,
+  catalogItems = [],
+  onAddToCart,
   compact = false,
 }: LandingPageRendererProps) {
   const enabledSections = sections.filter((section) => section.enabled);
@@ -444,6 +595,8 @@ export function LandingPageRenderer({
                     <LandingPageComponentView
                       component={component}
                       menuItems={menuItems}
+                      catalogItems={catalogItems}
+                      onAddToCart={onAddToCart}
                       theme={theme}
                       inSection
                     />

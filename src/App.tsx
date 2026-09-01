@@ -43,6 +43,12 @@ const CalendarTodosPage = lazy(() =>
 const LandingPageBuilderPage = lazy(() =>
   import("@/pages/LandingPageBuilderPage").then((m) => ({ default: m.LandingPageBuilderPage })),
 );
+const CatalogPage = lazy(() =>
+  import("@/pages/CatalogPage").then((m) => ({ default: m.CatalogPage })),
+);
+const OrdersPage = lazy(() =>
+  import("@/pages/OrdersPage").then((m) => ({ default: m.OrdersPage })),
+);
 const PublicLandingPage = lazy(() =>
   import("@/pages/PublicLandingPage").then((m) => ({ default: m.PublicLandingPage })),
 );
@@ -174,6 +180,8 @@ export function App() {
           <Route path="cash-flow" element={<CashFlowPage />} />
           <Route path="calendar" element={<CalendarTodosPage />} />
           <Route path="landing-page" element={<LandingPageBuilderPage />} />
+          <Route path="catalog" element={<CatalogPage />} />
+          <Route path="orders" element={<OrdersPage />} />
           <Route path="pigs" element={<PigsPage />} />
           <Route path="operations" element={<FarmOperationsPage />} />
           <Route path="slaughter" element={<SlaughterPage />} />

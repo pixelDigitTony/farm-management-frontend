@@ -118,6 +118,8 @@ For local development, the backend's console email provider prints the verificat
 | `/admin` | Super admin | Role-99 account approval queue |
 | `/join/:tokenId` | Invited registration | Create a sub-account from an opaque registration link |
 | `/landing-page` | Landing-page builder | Arrange custom sections and components, create variants, and publish the public site |
+| `/catalog` | Product catalog | Manage clothing, farm products, merchandise, variants, prices, and availability |
+| `/orders` | Customer orders | Review and process pending orders submitted through the public landing page |
 | `/site/:slug` | Public landing page | Local/fallback route when a wildcard domain is not configured |
 
 Protected pages render inside the application shell and redirect unauthenticated visitors to `/login`.
@@ -146,6 +148,9 @@ The UI sends all transaction-sensitive changes to backend operation endpoints. I
 - Menu and recipe details are saved through one combined backend operation.
 - Internal meat transfers display inventory cost movement but do not appear as cash income or expenses.
 - Reports are calculated from posted backend records for the selected date range.
+- Public landing pages can feature food and general products in one cart with guest pickup or delivery checkout.
+- Each landing-page variant has Cart & Checkout settings for ordering availability, button placement, pickup/delivery, minimum orders, delivery fees, and customer instructions.
+- Checkout creates a pending request; it does not post cash or operational inventory until the owner handles fulfillment through the appropriate workflow.
 
 ## Source layout
 

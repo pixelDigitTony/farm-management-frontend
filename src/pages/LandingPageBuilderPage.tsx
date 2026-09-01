@@ -56,6 +56,7 @@ const componentChoices: Array<{ type: LandingPageComponentType; label: string; i
   { type: "HERO", label: "Hero", icon: "solar:star-fall-linear" },
   { type: "TEXT", label: "Text", icon: "solar:text-square-linear" },
   { type: "MENU", label: "Menu", icon: "solar:notebook-bookmark-linear" },
+  { type: "CATALOG", label: "Product catalog", icon: "solar:shop-2-linear" },
   { type: "GALLERY", label: "Gallery", icon: "solar:gallery-wide-linear" },
   { type: "CONTACT", label: "Contact", icon: "solar:phone-calling-linear" },
   { type: "CTA", label: "Call to action", icon: "solar:cursor-square-linear" },
@@ -106,6 +107,7 @@ function SortableComponent({
   component,
   variant,
   menuItems,
+  catalogItems,
   selected,
   onSelect,
   onToggle,
@@ -116,6 +118,7 @@ function SortableComponent({
   component: LandingPageComponent;
   variant: LandingPageVariant;
   menuItems: LandingPageBuilderData["menuItems"];
+  catalogItems: LandingPageBuilderData["catalogItems"];
   selected: boolean;
   onSelect: () => void;
   onToggle: () => void;
@@ -189,6 +192,7 @@ function SortableComponent({
       <LandingPageComponentView
         component={component}
         menuItems={menuItems}
+        catalogItems={catalogItems}
         theme={variant.theme}
         previewDevice={device}
         inSection
@@ -212,10 +216,12 @@ const textAreaClass =
 function ComponentSettings({
   component,
   menuItems,
+  catalogItems,
   onChange,
 }: {
   component?: LandingPageComponent;
   menuItems: LandingPageBuilderData["menuItems"];
+  catalogItems: LandingPageBuilderData["catalogItems"];
   onChange: (component: LandingPageComponent) => void;
 }) {
   if (!component)
@@ -428,6 +434,96 @@ function ComponentSettings({
               ) : (
                 <p className="p-2 text-sm text-stone-500">
                   Add menu items from the Menu page first.
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+      {component.type === "CATALOG" && (
+        <>
+          <Field label="Heading">
+            <Input
+              value={component.content.heading}
+              onChange={(event) =>
+                replaceContent({ ...component.content, heading: event.target.value })
+              }
+            />
+          </Field>
+          <Field label="Description">
+            <textarea
+              className={textAreaClass}
+              value={component.content.body}
+              onChange={(event) =>
+                replaceContent({ ...component.content, body: event.target.value })
+              }
+            />
+          </Field>
+          <Field label="Columns">
+            <Select
+              value={String(component.content.columns)}
+              onValueChange={(value) =>
+                replaceContent({ ...component.content, columns: Number(value) as 2 | 3 | 4 })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[2, 3, 4].map((value) => (
+                  <SelectItem key={value} value={String(value)}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div>
+            <Label>Featured catalog items</Label>
+            <div className="mt-2 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-pink-100 p-2">
+              {catalogItems.length ? (
+                catalogItems.map((item) => {
+                  const checked = component.content.catalogItemRefs.some(
+                    (reference) =>
+                      reference.sourceType === item.sourceType &&
+                      reference.sourceId === item.sourceId,
+                  );
+                  return (
+                    <label
+                      key={item.key}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg p-2 text-sm hover:bg-pink-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          replaceContent({
+                            ...component.content,
+                            catalogItemRefs: checked
+                              ? component.content.catalogItemRefs.filter(
+                                  (reference) =>
+                                    !(
+                                      reference.sourceType === item.sourceType &&
+                                      reference.sourceId === item.sourceId
+                                    ),
+                                )
+                              : [
+                                  ...component.content.catalogItemRefs,
+                                  { sourceType: item.sourceType, sourceId: item.sourceId },
+                                ],
+                          })
+                        }
+                      />
+                      <span className="flex-1">{item.name}</span>
+                      <span className="text-[10px] font-bold uppercase text-stone-400">
+                        {item.productType.replaceAll("_", " ")}
+                      </span>
+                    </label>
+                  );
+                })
+              ) : (
+                <p className="p-2 text-sm text-stone-500">
+                  Add menu items or general products first.
                 </p>
               )}
             </div>
@@ -741,6 +837,7 @@ function SortableSection({
   section,
   variant,
   menuItems,
+  catalogItems,
   selectedSectionId,
   selectedComponentId,
   device,
@@ -756,6 +853,7 @@ function SortableSection({
   section: LandingPageSection;
   variant: LandingPageVariant;
   menuItems: LandingPageBuilderData["menuItems"];
+  catalogItems: LandingPageBuilderData["catalogItems"];
   selectedSectionId?: string;
   selectedComponentId?: string;
   device: "DESKTOP" | "TABLET" | "MOBILE";
@@ -845,6 +943,7 @@ function SortableSection({
                   component={component}
                   variant={variant}
                   menuItems={menuItems}
+                  catalogItems={catalogItems}
                   selected={selectedComponentId === component.id}
                   onSelect={() => onSelectComponent(component.id)}
                   onToggle={() => onUpdateComponent({ ...component, enabled: !component.enabled })}
@@ -878,6 +977,7 @@ export function LandingPageBuilderPage() {
   const [selectedComponentId, setSelectedComponentId] = useState<string>();
   const [device, setDevice] = useState<"DESKTOP" | "TABLET" | "MOBILE">("DESKTOP");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [commerceSettingsOpen, setCommerceSettingsOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const undoStack = useRef<LandingPageVariant[]>([]);
   const redoStack = useRef<LandingPageVariant[]>([]);
@@ -1072,6 +1172,7 @@ export function LandingPageBuilderPage() {
         body: JSON.stringify({
           name: variant.name,
           theme: variant.theme,
+          commerce: variant.commerce,
           sections: variant.sections,
         }),
       });
@@ -1095,6 +1196,7 @@ export function LandingPageBuilderPage() {
           body: JSON.stringify({
             name: variant.name,
             theme: variant.theme,
+            commerce: variant.commerce,
             sections: variant.sections,
           }),
         });
@@ -1206,6 +1308,16 @@ export function LandingPageBuilderPage() {
     .find((item) => item.id === selectedComponentId);
   const previewWidth =
     device === "MOBILE" ? "max-w-[390px]" : device === "TABLET" ? "max-w-[760px]" : "max-w-full";
+  const hasOrderableItems = draft.sections.some(
+    (section) =>
+      section.enabled &&
+      section.components.some(
+        (component) =>
+          component.enabled &&
+          ((component.type === "MENU" && component.content.menuItemIds.length > 0) ||
+            (component.type === "CATALOG" && component.content.catalogItemRefs.length > 0)),
+      ),
+  );
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
@@ -1217,6 +1329,9 @@ export function LandingPageBuilderPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setSettingsOpen(true)}>
               <Icon icon="solar:settings-linear" /> Page settings
+            </Button>
+            <Button variant="outline" onClick={() => setCommerceSettingsOpen(true)}>
+              <Icon icon="solar:cart-large-2-linear" /> Cart & checkout
             </Button>
             <Button
               variant="outline"
@@ -1497,7 +1612,7 @@ export function LandingPageBuilderPage() {
             </div>
             <div className="overflow-auto bg-stone-100 p-3 sm:p-5">
               <div
-                className={`mx-auto min-h-[640px] overflow-hidden bg-white shadow-xl transition-[max-width] ${previewWidth}`}
+                className={`relative mx-auto min-h-[640px] overflow-hidden bg-white shadow-xl transition-[max-width] ${previewWidth}`}
                 style={{ background: draft.theme.backgroundColor, color: draft.theme.textColor }}
               >
                 <SortableContext
@@ -1510,6 +1625,7 @@ export function LandingPageBuilderPage() {
                       section={section}
                       variant={draft}
                       menuItems={builder.data.menuItems}
+                      catalogItems={builder.data.catalogItems ?? []}
                       selectedSectionId={selectedSectionId}
                       selectedComponentId={selectedComponentId}
                       onSelectSection={() => {
@@ -1614,6 +1730,22 @@ export function LandingPageBuilderPage() {
                     />
                   ))}
                 </SortableContext>
+                {draft.commerce.orderingEnabled && hasOrderableItems && (
+                  <button
+                    type="button"
+                    className={`absolute bottom-5 z-30 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-xl ${
+                      draft.commerce.cartButtonPosition === "BOTTOM_LEFT" ? "left-5" : "right-5"
+                    }`}
+                    style={{ background: draft.theme.primaryColor }}
+                    onClick={() => setCommerceSettingsOpen(true)}
+                  >
+                    <Icon icon="solar:cart-large-2-linear" />
+                    {draft.commerce.cartButtonLabel}
+                    <span className="grid size-5 place-items-center rounded-full bg-white text-[10px] text-stone-900">
+                      0
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           </Card>
@@ -1623,6 +1755,7 @@ export function LandingPageBuilderPage() {
               <ComponentSettings
                 component={selected}
                 menuItems={builder.data.menuItems}
+                catalogItems={builder.data.catalogItems ?? []}
                 onChange={updateComponent}
               />
             ) : (
@@ -1671,6 +1804,189 @@ export function LandingPageBuilderPage() {
               Save settings
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={commerceSettingsOpen} onOpenChange={setCommerceSettingsOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogTitle>Cart & checkout settings</DialogTitle>
+          <DialogDescription>
+            Control ordering, fulfillment, fees, and the floating cart for this variant.
+          </DialogDescription>
+          <div className="mt-5 space-y-5">
+            <label className="flex items-start gap-3 rounded-xl border border-pink-100 p-4">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={draft.commerce.orderingEnabled}
+                onChange={(event) =>
+                  commit({
+                    ...draft,
+                    commerce: { ...draft.commerce, orderingEnabled: event.target.checked },
+                  })
+                }
+              />
+              <span>
+                <span className="block font-semibold">Enable online ordering</span>
+                <span className="text-sm text-stone-500">
+                  Shows Add to cart controls and accepts orders from the published page.
+                </span>
+              </span>
+            </label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Cart button label">
+                <Input
+                  value={draft.commerce.cartButtonLabel}
+                  maxLength={30}
+                  onChange={(event) =>
+                    commit({
+                      ...draft,
+                      commerce: { ...draft.commerce, cartButtonLabel: event.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Cart button position">
+                <Select
+                  value={draft.commerce.cartButtonPosition}
+                  onValueChange={(value) =>
+                    commit({
+                      ...draft,
+                      commerce: {
+                        ...draft.commerce,
+                        cartButtonPosition:
+                          value as LandingPageVariant["commerce"]["cartButtonPosition"],
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BOTTOM_RIGHT">Bottom right</SelectItem>
+                    <SelectItem value="BOTTOM_LEFT">Bottom left</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <div>
+              <Label>Fulfillment and payment methods</Label>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                {(
+                  [
+                    {
+                      fulfillment: "PICKUP",
+                      payment: "PAY_ON_PICKUP",
+                      title: "Pickup",
+                      detail: "Customer pays when collecting the order.",
+                    },
+                    {
+                      fulfillment: "DELIVERY",
+                      payment: "CASH_ON_DELIVERY",
+                      title: "Delivery",
+                      detail: "Customer pays cash when the order arrives.",
+                    },
+                  ] as const
+                ).map((option) => {
+                  const checked = draft.commerce.fulfillmentMethods.includes(option.fulfillment);
+                  return (
+                    <label
+                      key={option.fulfillment}
+                      className="flex items-start gap-3 rounded-xl border border-pink-100 p-4"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={checked}
+                        onChange={() =>
+                          commit({
+                            ...draft,
+                            commerce: {
+                              ...draft.commerce,
+                              fulfillmentMethods: checked
+                                ? draft.commerce.fulfillmentMethods.filter(
+                                    (method) => method !== option.fulfillment,
+                                  )
+                                : [...draft.commerce.fulfillmentMethods, option.fulfillment],
+                              paymentMethods: checked
+                                ? draft.commerce.paymentMethods.filter(
+                                    (method) => method !== option.payment,
+                                  )
+                                : [...draft.commerce.paymentMethods, option.payment],
+                            },
+                          })
+                        }
+                      />
+                      <span>
+                        <span className="block font-semibold">{option.title}</span>
+                        <span className="text-sm text-stone-500">{option.detail}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Minimum order">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.commerce.minimumOrder}
+                  onChange={(event) =>
+                    commit({
+                      ...draft,
+                      commerce: {
+                        ...draft.commerce,
+                        minimumOrder: Number(event.target.value),
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Delivery fee">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={!draft.commerce.fulfillmentMethods.includes("DELIVERY")}
+                  value={draft.commerce.deliveryFee}
+                  onChange={(event) =>
+                    commit({
+                      ...draft,
+                      commerce: { ...draft.commerce, deliveryFee: Number(event.target.value) },
+                    })
+                  }
+                />
+              </Field>
+            </div>
+
+            <Field label="Checkout instructions">
+              <textarea
+                className={textAreaClass}
+                maxLength={500}
+                value={draft.commerce.checkoutInstructions}
+                onChange={(event) =>
+                  commit({
+                    ...draft,
+                    commerce: { ...draft.commerce, checkoutInstructions: event.target.value },
+                  })
+                }
+              />
+            </Field>
+            {draft.commerce.orderingEnabled && !draft.commerce.fulfillmentMethods.length && (
+              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                Select pickup or delivery before saving this enabled storefront.
+              </p>
+            )}
+            <Button className="w-full" onClick={() => setCommerceSettingsOpen(false)}>
+              Done — remember to save draft
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </DndContext>

@@ -119,3 +119,76 @@ export type CalendarTodo = {
   completedByUserId?: string | null;
   createdAt: string;
 };
+
+export type CatalogProductVariant = {
+  variantId: string;
+  name: string;
+  sku?: string;
+  attributes: Array<{ name: string; value: string }>;
+  price: Money;
+  availableQuantity: number | null;
+  isAvailable: boolean;
+};
+
+export type CatalogProduct = {
+  _id: string;
+  productCode: string;
+  name: string;
+  description: string;
+  category: string;
+  productType: "CLOTHING" | "FARM_PRODUCT" | "MERCHANDISE" | "OTHER";
+  mediaUrls: string[];
+  basePrice: Money;
+  availableQuantity: number | null;
+  variants: CatalogProductVariant[];
+  isFeatured: boolean;
+  isOrderable: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerOrderStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "PROCESSING"
+  | "READY"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type CustomerOrder = {
+  _id: string;
+  orderNumber: string;
+  sourceSlugSnapshot: string;
+  customer: { name: string; phone: string; email?: string };
+  fulfillmentMethod: "PICKUP" | "DELIVERY";
+  deliveryAddress?: string;
+  paymentMethod: "PAY_ON_PICKUP" | "CASH_ON_DELIVERY";
+  items: Array<{
+    sourceType: "MENU_ITEM" | "PRODUCT";
+    sourceId: string;
+    variantId?: string | null;
+    nameSnapshot: string;
+    categorySnapshot?: string;
+    variantSnapshot?: string;
+    mediaUrlSnapshot?: string;
+    unitPrice: Money;
+    quantity: number;
+    lineTotal: Money;
+  }>;
+  subtotal: Money;
+  deliveryFee?: Money;
+  total: Money;
+  customerNotes?: string;
+  status: CustomerOrderStatus;
+  statusHistory: Array<{
+    status: CustomerOrderStatus;
+    changedAt: string;
+    changedByUserId?: string;
+    note?: string;
+  }>;
+  cancellationReason?: string;
+  stockReserved: boolean;
+  createdAt: string;
+  updatedAt: string;
+};

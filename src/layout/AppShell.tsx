@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react";
+import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -21,6 +22,24 @@ const navGroups = [
         access: "highest",
       },
       { label: "Inventory", to: "/inventory", icon: "solar:box-linear" },
+    ],
+  },
+  {
+    label: "Commerce",
+    items: [
+      {
+        label: "Product Catalog",
+        to: "/catalog",
+        icon: "solar:shop-2-linear",
+        access: "highest",
+      },
+      {
+        label: "Customer Orders",
+        to: "/orders",
+        icon: "solar:inbox-line-linear",
+        access: "highest",
+        orderBadge: true,
+      },
     ],
   },
   {
@@ -59,6 +78,12 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const user = sessionUserStore.get();
+  const pendingOrders = useQuery({
+    queryKey: ["customer-orders", "sidebar-pending"],
+    queryFn: () => api<{ pendingCount: number }>("/orders?status=PENDING"),
+    enabled: Boolean(user?.isHighestRole),
+    refetchInterval: 30_000,
+  });
   const visibleNavGroups = navGroups.map((group) => ({
     ...group,
     items: group.items.filter(
@@ -104,7 +129,14 @@ export function AppShell() {
                   }
                 >
                   <Icon icon={item.icon} className="size-5" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {"orderBadge" in item &&
+                    item.orderBadge === true &&
+                    Boolean(pendingOrders.data?.pendingCount) && (
+                      <span className="rounded-full bg-pink-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                        {pendingOrders.data?.pendingCount}
+                      </span>
+                    )}
                 </NavLink>
               ))}
             </div>
