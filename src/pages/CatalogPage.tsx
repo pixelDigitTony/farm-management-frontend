@@ -81,16 +81,48 @@ function draftFromProduct(product: CatalogProduct): ProductDraft {
 const textAreaClass =
   "min-h-24 w-full resize-y rounded-xl border border-pink-100 bg-white px-3 py-2 text-sm outline-none focus:border-pink-600 focus:ring-3 focus:ring-pink-600/10";
 
+const alphabetical = (left: string, right: string) =>
+  left.trim().localeCompare(right.trim(), undefined, { sensitivity: "base" });
+
 export function CatalogPage() {
   const client = useQueryClient();
   const [editing, setEditing] = useState<CatalogProduct>();
   const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
   const [open, setOpen] = useState(false);
   const [archiving, setArchiving] = useState<CatalogProduct>();
+  const [categoryFilter, setCategoryFilter] = useState("");
   const products = useQuery({
     queryKey: ["catalog-products"],
     queryFn: () => api<{ items: CatalogProduct[] }>("/catalog/products"),
   });
+  const items = products.data?.items ?? [];
+  const categories = new Map<string, string>();
+  for (const product of items) {
+    const label = product.category?.trim();
+    if (label && !categories.has(label.toLowerCase())) {
+      categories.set(label.toLowerCase(), label);
+    }
+  }
+  const selectedCategory = categories.has(categoryFilter) ? categoryFilter : "";
+  const filteredProducts = selectedCategory
+    ? items.filter((product) => product.category?.trim().toLowerCase() === selectedCategory)
+    : items;
+  const groups = new Map<string, { label: string; products: CatalogProduct[] }>();
+  for (const product of filteredProducts) {
+    const key = product.category?.trim().toLowerCase() ?? "";
+    let group = groups.get(key);
+    if (!group) {
+      group = { label: categories.get(key) ?? "Uncategorized", products: [] };
+      groups.set(key, group);
+    }
+    group.products.push(product);
+  }
+  const sections = [...groups.entries()].sort(([, left], [, right]) =>
+    alphabetical(left.label, right.label),
+  );
+  for (const [, group] of sections) {
+    group.products.sort((left, right) => alphabetical(left.name, right.name));
+  }
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["catalog-products"] });
     void client.invalidateQueries({ queryKey: ["landing-page-builder"] });
@@ -182,58 +214,99 @@ export function CatalogPage() {
         </Button>
       </Header>
 
-      {(products.data?.items ?? []).length ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {products.data?.items.map((product) => (
-            <Card key={product._id} className={!product.isActive ? "opacity-60" : ""}>
-              {product.mediaUrls?.[0] && (
-                <img
-                  src={product.mediaUrls[0]}
-                  alt={product.name}
-                  className="h-44 w-full rounded-t-2xl object-cover"
-                />
-              )}
-              <CardContent className="space-y-4 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-pink-700">
-                      {product.category || product.productType.replaceAll("_", " ")}
-                    </p>
-                    <h2 className="mt-1 font-display text-xl font-semibold">{product.name}</h2>
-                  </div>
-                  <Badge tone={product.isActive && product.isOrderable ? "green" : "neutral"}>
-                    {product.isActive ? (product.isOrderable ? "Orderable" : "Hidden") : "Archived"}
-                  </Badge>
-                </div>
-                <p className="line-clamp-2 text-sm text-stone-500">
-                  {product.description || "No product description yet."}
-                </p>
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-bold text-pink-700">
-                      {formatPeso(product.basePrice)}
-                    </p>
-                    <p className="text-xs text-stone-500">
-                      {product.variants.length
-                        ? `${product.variants.length} option${product.variants.length === 1 ? "" : "s"}`
-                        : product.availableQuantity === null
-                          ? "Quantity not tracked"
-                          : `${product.availableQuantity} available`}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => startEdit(product)}>
-                      Edit
-                    </Button>
-                    {product.isActive && (
-                      <Button variant="ghost" size="sm" onClick={() => setArchiving(product)}>
-                        Archive
-                      </Button>
+      {items.length > 0 && (
+        <div className="max-w-xs space-y-2">
+          <label htmlFor="catalog-category-filter" className="text-sm font-medium">
+            Category
+          </label>
+          <select
+            id="catalog-category-filter"
+            value={selectedCategory}
+            onChange={(event) => setCategoryFilter(event.target.value)}
+            className="h-11 w-full rounded-xl border border-pink-100 bg-white px-3 text-sm outline-none focus:border-pink-600 focus:ring-3 focus:ring-pink-600/10"
+          >
+            <option value="">All categories</option>
+            {[...categories.entries()]
+              .sort(([, left], [, right]) => alphabetical(left, right))
+              .map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
+
+      {items.length ? (
+        <div className="space-y-8">
+          {sections.map(([key, group]) => (
+            <section key={key} className="space-y-4">
+              <h2 className="font-display text-2xl font-semibold">
+                {group.label}{" "}
+                <span className="text-lg font-medium text-stone-500">
+                  ({group.products.length})
+                </span>
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {group.products.map((product) => (
+                  <Card key={product._id} className={!product.isActive ? "opacity-60" : ""}>
+                    {product.mediaUrls?.[0] && (
+                      <img
+                        src={product.mediaUrls[0]}
+                        alt={product.name}
+                        className="h-44 w-full rounded-t-2xl object-cover"
+                      />
                     )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                    <CardContent className="space-y-4 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wide text-pink-700">
+                            {product.category || product.productType.replaceAll("_", " ")}
+                          </p>
+                          <h3 className="mt-1 font-display text-xl font-semibold">
+                            {product.name}
+                          </h3>
+                        </div>
+                        <Badge tone={product.isActive && product.isOrderable ? "green" : "neutral"}>
+                          {product.isActive
+                            ? product.isOrderable
+                              ? "Orderable"
+                              : "Hidden"
+                            : "Archived"}
+                        </Badge>
+                      </div>
+                      <p className="line-clamp-2 text-sm text-stone-500">
+                        {product.description || "No product description yet."}
+                      </p>
+                      <div className="flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-bold text-pink-700">
+                            {formatPeso(product.basePrice)}
+                          </p>
+                          <p className="text-xs text-stone-500">
+                            {product.variants.length
+                              ? `${product.variants.length} option${product.variants.length === 1 ? "" : "s"}`
+                              : product.availableQuantity === null
+                                ? "Quantity not tracked"
+                                : `${product.availableQuantity} available`}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => startEdit(product)}>
+                            Edit
+                          </Button>
+                          {product.isActive && (
+                            <Button variant="ghost" size="sm" onClick={() => setArchiving(product)}>
+                              Archive
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       ) : (
