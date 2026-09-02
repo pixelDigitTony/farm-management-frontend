@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { CatalogDiscountManager } from "@/components/CatalogDiscountManager";
+import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import { formatPeso } from "@/lib/utils";
+import { useCatalogClock } from "@/lib/catalog-discounts";
 import type { CatalogProduct } from "@/types/domain";
 import { Header } from "./PigsPage";
 
@@ -91,11 +93,23 @@ export function CatalogPage() {
   const [open, setOpen] = useState(false);
   const [archiving, setArchiving] = useState<CatalogProduct>();
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
   const products = useQuery({
     queryKey: ["catalog-products"],
-    queryFn: () => api<{ items: CatalogProduct[] }>("/catalog/products"),
+    queryFn: () => api<{ items: CatalogProduct[]; serverTime: string }>("/catalog/products"),
+    refetchInterval: 30_000,
   });
+  const now = useCatalogClock(products.data?.serverTime, products.dataUpdatedAt);
   const items = products.data?.items ?? [];
+  const selectedIds = selected.filter((id) =>
+    items.some((product) => product._id === id && product.isActive),
+  );
+  function selectProducts(list: CatalogProduct[], checked: boolean) {
+    const ids = list.filter((product) => product.isActive).map((product) => product._id);
+    setSelected((current) =>
+      checked ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id)),
+    );
+  }
   const categories = new Map<string, string>();
   for (const product of items) {
     const label = product.category?.trim();
@@ -126,6 +140,8 @@ export function CatalogPage() {
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["catalog-products"] });
     void client.invalidateQueries({ queryKey: ["landing-page-builder"] });
+    void client.invalidateQueries({ queryKey: ["catalog-discounts"] });
+    void client.invalidateQueries({ queryKey: ["public-landing-page"] });
   };
   const save = useMutation({
     mutationFn: () => {
@@ -214,6 +230,32 @@ export function CatalogPage() {
         </Button>
       </Header>
 
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-pink-100 bg-white p-4">
+        <p className="text-sm font-semibold">{selectedIds.length} selected</p>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!filteredProducts.some((product) => product.isActive)}
+          onClick={() => selectProducts(filteredProducts, true)}
+        >
+          Select all filtered products
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!selectedIds.length}
+          onClick={() => setSelected([])}
+        >
+          Clear selection
+        </Button>
+        <CatalogDiscountManager
+          products={items}
+          selectedIds={selectedIds}
+          now={now}
+          onSaved={refresh}
+        />
+      </div>
+
       {items.length > 0 && (
         <div className="max-w-xs space-y-2">
           <label htmlFor="catalog-category-filter" className="text-sm font-medium">
@@ -241,12 +283,29 @@ export function CatalogPage() {
         <div className="space-y-8">
           {sections.map(([key, group]) => (
             <section key={key} className="space-y-4">
-              <h2 className="font-display text-2xl font-semibold">
-                {group.label}{" "}
-                <span className="text-lg font-medium text-stone-500">
-                  ({group.products.length})
-                </span>
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-display text-2xl font-semibold">
+                  {group.label}{" "}
+                  <span className="text-lg font-medium text-stone-500">
+                    ({group.products.length})
+                  </span>
+                </h2>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select category ${group.label}`}
+                    disabled={!group.products.some((product) => product.isActive)}
+                    checked={
+                      group.products.some((product) => product.isActive) &&
+                      group.products
+                        .filter((product) => product.isActive)
+                        .every((product) => selectedIds.includes(product._id))
+                    }
+                    onChange={(event) => selectProducts(group.products, event.target.checked)}
+                  />
+                  Select category
+                </label>
+              </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {group.products.map((product) => (
                   <Card key={product._id} className={!product.isActive ? "opacity-60" : ""}>
@@ -258,6 +317,16 @@ export function CatalogPage() {
                       />
                     )}
                     <CardContent className="space-y-4 p-5">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${product.name}`}
+                          checked={selectedIds.includes(product._id)}
+                          disabled={!product.isActive}
+                          onChange={(event) => selectProducts([product], event.target.checked)}
+                        />
+                        Select product
+                      </label>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-bold uppercase tracking-wide text-pink-700">
@@ -280,9 +349,22 @@ export function CatalogPage() {
                       </p>
                       <div className="flex items-end justify-between gap-3">
                         <div>
-                          <p className="text-lg font-bold text-pink-700">
-                            {formatPeso(product.basePrice)}
-                          </p>
+                          <div className="text-lg text-pink-700">
+                            <CatalogDiscountPrice
+                              now={now}
+                              from={product.variants.length > 0}
+                              pricing={
+                                product.variants.length
+                                  ? {
+                                      ...[...product.variants].sort(
+                                        (left, right) => Number(left.price) - Number(right.price),
+                                      )[0],
+                                      discount: product.discount,
+                                    }
+                                  : { ...product, price: product.basePrice }
+                              }
+                            />
+                          </div>
                           <p className="text-xs text-stone-500">
                             {product.variants.length
                               ? `${product.variants.length} option${product.variants.length === 1 ? "" : "s"}`

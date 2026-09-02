@@ -301,6 +301,15 @@ function OrderDetails({ order }: { order: CustomerOrder }) {
               <p className="text-sm text-stone-500">
                 {item.quantity} × {formatPeso(item.unitPrice)}
               </p>
+              {item.discountSnapshot && (
+                <p className="text-xs text-emerald-700">
+                  {item.discountSnapshot.name} · saved {formatPeso(item.discountAmount ?? 0)} per
+                  unit
+                  {item.originalUnitPrice != null && (
+                    <> (originally {formatPeso(item.originalUnitPrice)})</>
+                  )}
+                </p>
+              )}
             </div>
             <p className="font-bold">{formatPeso(item.lineTotal)}</p>
           </div>

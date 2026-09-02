@@ -118,11 +118,22 @@ For local development, the backend's console email provider prints the verificat
 | `/admin` | Super admin | Role-99 account approval queue |
 | `/join/:tokenId` | Invited registration | Create a sub-account from an opaque registration link |
 | `/landing-page` | Landing-page builder | Arrange custom sections and components, create variants, and publish the public site |
-| `/catalog` | Product catalog | Manage clothing, farm products, merchandise, variants, prices, and availability |
+| `/catalog` | Product catalog | Category sections and filters, product selection, variants, prices, availability, and scheduled percentage/fixed discounts |
 | `/orders` | Customer orders | Review and process pending orders submitted through the public landing page |
 | `/site/:slug` | Public landing page | Local/fallback route when a wildcard domain is not configured |
 
 Protected pages render inside the application shell and redirect unauthenticated visitors to `/login`.
+
+In Product Catalog, select individual products, a category, or all filtered products and choose
+**Set discount**. Choose a percentage or fixed peso reduction, preview all affected variant
+prices, and set start/end times in Philippine time (UTC+08:00). **Manage discounts** supports
+editing, deactivation, and reactivation. Conflicting enabled promotions are blocked.
+
+Countdowns display total hours, minutes, and seconds (`125:04:09`, never days). Scheduled
+promotions show both start and end countdowns; active promotions show time until expiry.
+The storefront updates prices at schedule boundaries, checks for manual changes every 30
+seconds and on focus, and refreshes before checkout. If prices change, customers must review
+the updated total before submitting. The backend remains authoritative, including for old carts.
 
 ## Business workflow
 

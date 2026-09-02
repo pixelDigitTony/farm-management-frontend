@@ -121,6 +121,8 @@ export type CalendarTodo = {
 };
 
 export type CatalogProductVariant = {
+  originalPrice?: Money;
+  discountedPrice?: Money;
   variantId: string;
   name: string;
   sku?: string;
@@ -131,6 +133,10 @@ export type CatalogProductVariant = {
 };
 
 export type CatalogProduct = {
+  originalPrice?: Money;
+  discountedPrice?: Money;
+  price?: Money;
+  discount?: import("@/lib/catalog-discounts").ProductDiscount | null;
   _id: string;
   productCode: string;
   name: string;
@@ -173,6 +179,14 @@ export type CustomerOrder = {
     variantSnapshot?: string;
     mediaUrlSnapshot?: string;
     unitPrice: Money;
+    originalUnitPrice?: Money | null;
+    discountAmount?: Money | null;
+    discountSnapshot?: {
+      promotionId: string;
+      name: string;
+      type: "PERCENTAGE" | "FIXED";
+      value: number;
+    } | null;
     quantity: number;
     lineTotal: Money;
   }>;

@@ -1,4 +1,6 @@
 import { Icon } from "@iconify/react";
+import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
+import { effectivePrice, useCatalogClock } from "@/lib/catalog-discounts";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
 import { formatPeso } from "@/lib/utils";
 import type {
@@ -203,6 +205,7 @@ function CatalogSection({
       ),
     )
     .filter((item): item is LandingCatalogItem => Boolean(item));
+  const now = useCatalogClock();
   return (
     <section id="products" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
       <div className="mx-auto max-w-6xl">
@@ -254,14 +257,24 @@ function CatalogSection({
                   {item.description && (
                     <p className="mt-2 line-clamp-2 text-sm opacity-65">{item.description}</p>
                   )}
-                  <p className="mt-3 font-bold" style={{ color: theme.primaryColor }}>
-                    {item.variants.length ? "From " : ""}
-                    {formatPeso(
-                      item.variants.length
-                        ? Math.min(...item.variants.map((variant) => Number(variant.price)))
-                        : item.price,
-                    )}
-                  </p>
+                  <div className="mt-3" style={{ color: theme.primaryColor }}>
+                    <CatalogDiscountPrice
+                      now={now}
+                      from={item.variants.length > 0}
+                      pricing={
+                        item.variants.length
+                          ? {
+                              ...[...item.variants].sort(
+                                (left, right) =>
+                                  effectivePrice(left, now, item.discount) -
+                                  effectivePrice(right, now, item.discount),
+                              )[0],
+                              discount: item.discount,
+                            }
+                          : item
+                      }
+                    />
+                  </div>
                   {onAddToCart && (
                     <button
                       type="button"

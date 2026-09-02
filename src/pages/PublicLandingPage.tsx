@@ -1,14 +1,16 @@
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { api } from "@/api/client";
+import { ApiError, api } from "@/api/client";
+import { CatalogDiscountPrice, DiscountCountdown } from "@/components/CatalogDiscountPrice";
 import { LandingPageRenderer } from "@/components/landing-page/LandingPageRenderer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { effectivePrice, useCatalogClock } from "@/lib/catalog-discounts";
 import { formatPeso } from "@/lib/utils";
 import type {
   LandingCatalogItem,
@@ -21,6 +23,7 @@ import type {
 import { defaultLandingPageCommerceSettings, normalizeLandingSections } from "@/types/landing-page";
 
 type PublicLandingPage = {
+  serverTime?: string;
   slug: string;
   siteTitle: string;
   seoDescription: string;
@@ -51,7 +54,11 @@ function cartKey(slug: string) {
   return `miss-v-cart:${slug}`;
 }
 
-function lineFromItem(item: LandingCatalogItem, variant?: LandingCatalogVariant): CartLine {
+function lineFromItem(
+  item: LandingCatalogItem,
+  variant?: LandingCatalogVariant,
+  now = Date.now(),
+): CartLine {
   return {
     key: `${item.key}:${variant?.variantId ?? ""}`,
     sourceType: item.sourceType,
@@ -60,7 +67,7 @@ function lineFromItem(item: LandingCatalogItem, variant?: LandingCatalogVariant)
     name: item.name,
     variantName: variant?.name ?? "",
     mediaUrl: item.mediaUrls[0] ?? "",
-    unitPrice: Number(variant?.price ?? item.price),
+    unitPrice: effectivePrice(variant ?? item, now, item.discount),
     quantity: 1,
   };
 }
@@ -72,6 +79,9 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   const [cartReadySlug, setCartReadySlug] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
+  const [reviewedPrices, setReviewedPrices] = useState("");
+  const [priceNotice, setPriceNotice] = useState("");
+  const [checkingPrices, setCheckingPrices] = useState(false);
   const [success, setSuccess] = useState<{ orderNumber: string; total: string | number }>();
   const [choosing, setChoosing] = useState<LandingCatalogItem>();
   const [idempotencyKey, setIdempotencyKey] = useState(() =>
@@ -81,7 +91,48 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     queryKey: ["public-landing-page", slug],
     queryFn: () => api<PublicLandingPage>(`/public/landing-pages/${encodeURIComponent(slug)}`),
     retry: false,
+    refetchInterval: 30_000,
   });
+  const now = useCatalogClock(page.data?.serverTime, page.dataUpdatedAt);
+  const boundary = useRef("");
+  useEffect(() => {
+    const next = (page.data?.catalogItems ?? [])
+      .map((item) => {
+        const discount = item.discount;
+        return discount
+          ? `${discount.id}:${now >= Date.parse(discount.startsAt)}:${now >= Date.parse(discount.endsAt)}`
+          : "";
+      })
+      .join("|");
+    if (boundary.current && boundary.current !== next) void page.refetch();
+    boundary.current = next;
+  }, [now, page.data?.catalogItems, page.refetch]);
+  const pricedCart = useMemo(
+    () =>
+      cart.map((line) => {
+        const item = page.data?.catalogItems.find(
+          (candidate) =>
+            candidate.sourceType === line.sourceType && candidate.sourceId === line.sourceId,
+        );
+        const variant = item?.variants.find((candidate) => candidate.variantId === line.variantId);
+        if (!item || (line.variantId && !variant)) return { ...line, unavailable: true };
+        const price = effectivePrice(variant ?? item, now, item.discount);
+        return {
+          ...line,
+          unitPrice: price,
+          originalPrice: Number((variant ?? item).originalPrice ?? price),
+          unavailable:
+            !item.isAvailable || (variant ? !variant.isAvailable : item.variants.length > 0),
+        };
+      }),
+    [cart, page.data?.catalogItems, now],
+  );
+  const pricingSignature = JSON.stringify([
+    pricedCart.map((line) => [line.key, line.unitPrice, line.unavailable]),
+    page.data?.variant.commerce,
+  ]);
+  const pricesNeedReview = checkout && pricingSignature !== reviewedPrices;
+  const chosenItem = page.data?.catalogItems.find((item) => item.key === choosing?.key);
   useEffect(() => {
     if (!page.data) return;
     document.title = page.data.siteTitle;
@@ -107,8 +158,12 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   }, [cart, cartReadySlug, slug]);
   const cartCount = cart.reduce((total, line) => total + line.quantity, 0);
   const cartTotal = useMemo(
-    () => cart.reduce((total, line) => total + line.unitPrice * line.quantity, 0),
-    [cart],
+    () =>
+      pricedCart.reduce(
+        (total, line) => total + Math.round(line.unitPrice * 100) * line.quantity,
+        0,
+      ) / 100,
+    [pricedCart],
   );
   const order = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
@@ -122,11 +177,18 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       setCheckout(false);
       setIdempotencyKey(crypto.randomUUID().replaceAll("-", "_"));
     },
-    onError: (error) => toast.error(error.message),
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === "PRICES_CHANGED") {
+        setReviewedPrices("");
+        setPriceNotice(error.message);
+        await page.refetch();
+      }
+      toast.error(error.message);
+    },
   });
 
   function addLine(item: LandingCatalogItem, variant?: LandingCatalogVariant) {
-    const line = lineFromItem(item, variant);
+    const line = lineFromItem(item, variant, now);
     setCart((current) => {
       const existing = current.find((candidate) => candidate.key === line.key);
       if (!existing) return [...current, line];
@@ -157,6 +219,15 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
 
   function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pricesNeedReview || priceNotice || page.isFetching) {
+      setPriceNotice("Prices have changed. Review the updated total before placing your order.");
+      return;
+    }
+    if (pricedCart.some((line) => line.unavailable)) {
+      toast.error("Remove unavailable products from your cart first.");
+      return;
+    }
+    if (!pricedCart.length || !minimumReached || order.isPending) return;
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const fulfillmentMethod = String(values.fulfillmentMethod);
     order.mutate({
@@ -170,12 +241,16 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       deliveryAddress:
         fulfillmentMethod === "DELIVERY" ? String(values.deliveryAddress).trim() : "",
       paymentMethod: fulfillmentMethod === "DELIVERY" ? "CASH_ON_DELIVERY" : "PAY_ON_PICKUP",
-      items: cart.map((line) => ({
+      items: pricedCart.map((line) => ({
         sourceType: line.sourceType,
         sourceId: line.sourceId,
         variantId: line.variantId,
         quantity: line.quantity,
+        expectedUnitPrice: line.unitPrice,
       })),
+      expectedTotal: Number(
+        (cartTotal + (fulfillmentMethod === "DELIVERY" ? commerce.deliveryFee : 0)).toFixed(2),
+      ),
       customerNotes: String(values.customerNotes ?? "").trim(),
     });
   }
@@ -248,13 +323,14 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
             Select the size, color, or style before adding this item.
           </DialogDescription>
           <div className="mt-5 space-y-3">
-            {choosing?.variants.map((variant) => (
+            <DiscountCountdown discount={chosenItem?.discount} now={now} />
+            {chosenItem?.variants.map((variant) => (
               <button
                 key={variant.variantId}
                 type="button"
-                disabled={!variant.isAvailable}
+                disabled={!variant.isAvailable || !chosenItem.isAvailable}
                 className="flex w-full items-center justify-between rounded-xl border border-pink-100 p-4 text-left transition hover:border-pink-400 disabled:cursor-not-allowed disabled:opacity-45"
-                onClick={() => addLine(choosing, variant)}
+                onClick={() => addLine(chosenItem, variant)}
               >
                 <div>
                   <p className="font-semibold">{variant.name}</p>
@@ -267,7 +343,13 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-pink-700">{formatPeso(variant.price)}</p>
+                  <div className="text-pink-700">
+                    <CatalogDiscountPrice
+                      pricing={{ ...variant, discount: chosenItem.discount }}
+                      now={now}
+                      showCountdown={false}
+                    />
+                  </div>
                   <p className="text-xs text-stone-500">
                     {variant.isAvailable ? "Available" : "Unavailable"}
                   </p>
@@ -306,10 +388,36 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
               <DialogDescription>
                 Your total will be verified when the order is submitted.
               </DialogDescription>
+              {(pricesNeedReview || priceNotice) && (
+                <div
+                  role="alert"
+                  className="mt-4 space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  <p>{priceNotice || "Prices have changed. Review the updated total below."}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={page.isFetching}
+                    onClick={() => {
+                      setReviewedPrices(pricingSignature);
+                      setPriceNotice("");
+                    }}
+                  >
+                    I reviewed the updated total
+                  </Button>
+                </div>
+              )}
               <CheckoutForm
                 subtotal={cartTotal}
                 settings={commerce}
-                pending={order.isPending}
+                pending={order.isPending || page.isFetching}
+                blocked={
+                  pricesNeedReview ||
+                  Boolean(priceNotice) ||
+                  pricedCart.some((line) => line.unavailable) ||
+                  !minimumReached
+                }
                 onBack={() => setCheckout(false)}
                 onSubmit={submitOrder}
               />
@@ -323,7 +431,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   : "Your cart is empty."}
               </DialogDescription>
               <div className="mt-5 max-h-[55vh] space-y-4 overflow-y-auto">
-                {cart.map((line) => (
+                {pricedCart.map((line) => (
                   <div key={line.key} className="flex gap-3 border-b border-pink-100 pb-4">
                     {line.mediaUrl ? (
                       <img
@@ -342,8 +450,16 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                         <p className="text-xs text-stone-500">{line.variantName}</p>
                       )}
                       <p className="mt-1 text-sm font-bold text-pink-700">
+                        {"originalPrice" in line && Number(line.originalPrice) > line.unitPrice && (
+                          <del className="mr-2 font-normal text-stone-500">
+                            {formatPeso(Number(line.originalPrice))}
+                          </del>
+                        )}
                         {formatPeso(line.unitPrice)}
                       </p>
+                      {line.unavailable && (
+                        <p className="text-xs text-red-700">Unavailable — remove from cart</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 self-center">
                       <Button
@@ -379,10 +495,26 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
               )}
               <Button
                 className="mt-4 w-full"
-                disabled={!cart.length || !minimumReached}
-                onClick={() => setCheckout(true)}
+                disabled={
+                  !cart.length ||
+                  !minimumReached ||
+                  checkingPrices ||
+                  pricedCart.some((line) => line.unavailable)
+                }
+                onClick={async () => {
+                  setCheckingPrices(true);
+                  const result = await page.refetch();
+                  setCheckingPrices(false);
+                  if (result.isError) {
+                    toast.error("Unable to refresh prices. Please try again.");
+                    return;
+                  }
+                  setReviewedPrices(pricingSignature);
+                  setPriceNotice("");
+                  setCheckout(true);
+                }}
               >
-                Continue to checkout
+                {checkingPrices ? "Checking prices..." : "Continue to checkout"}
               </Button>
             </>
           )}
@@ -396,12 +528,14 @@ function CheckoutForm({
   subtotal,
   settings,
   pending,
+  blocked,
   onBack,
   onSubmit,
 }: {
   subtotal: number;
   settings: LandingPageCommerceSettings;
   pending: boolean;
+  blocked: boolean;
   onBack: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
@@ -494,7 +628,7 @@ function CheckoutForm({
         <Button type="button" className="flex-1" variant="outline" onClick={onBack}>
           Back to cart
         </Button>
-        <Button type="submit" className="flex-1" disabled={pending}>
+        <Button type="submit" className="flex-1" disabled={pending || blocked}>
           {pending ? "Submitting..." : "Place order"}
         </Button>
       </div>

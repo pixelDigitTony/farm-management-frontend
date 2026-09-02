@@ -161,6 +161,8 @@ export type LandingMenuItem = {
 };
 
 export type LandingCatalogVariant = {
+  originalPrice?: string | number;
+  discountedPrice?: string | number;
   variantId: string;
   name: string;
   attributes: Array<{ name: string; value: string }>;
@@ -169,6 +171,9 @@ export type LandingCatalogVariant = {
 };
 
 export type LandingCatalogItem = {
+  originalPrice?: string | number;
+  discountedPrice?: string | number;
+  discount?: import("@/lib/catalog-discounts").ProductDiscount | null;
   key: string;
   sourceType: "MENU_ITEM" | "PRODUCT";
   sourceId: string;
