@@ -22,7 +22,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { LandingPageComponentView } from "@/components/landing-page/LandingPageRenderer";
+import {
+  LandingPageComponentView,
+  sectionScrollStyle,
+} from "@/components/landing-page/LandingPageRenderer";
 import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,6 +44,7 @@ import type {
   LandingPageBuilderData,
   LandingPageComponent,
   LandingPageComponentType,
+  LandingPageDisplayMode,
   LandingPageSection,
   LandingPageVariant,
   LandingPageVariantPayload,
@@ -132,7 +136,7 @@ function SortableComponent({
   return (
     <div
       ref={setNodeRef}
-      className={`group relative border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : component.width === "TWO_THIRDS" ? "col-span-8" : component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
+      className={`group relative min-w-0 border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : component.width === "TWO_THIRDS" ? "col-span-8" : component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -142,9 +146,15 @@ function SortableComponent({
       <button
         type="button"
         aria-label={`Edit ${component.type.toLowerCase()} component`}
-        className="absolute inset-0 z-10 cursor-pointer"
+        className={
+          component.type === "MENU" || component.type === "CATALOG"
+            ? "absolute left-2 top-2 z-20 rounded-lg bg-white px-3 py-1 text-xs font-semibold text-pink-700 shadow"
+            : "absolute inset-0 z-10 cursor-pointer"
+        }
         onClick={onSelect}
-      />
+      >
+        {(component.type === "MENU" || component.type === "CATALOG") && "Edit items"}
+      </button>
       <div className="absolute right-2 top-2 z-20 hidden items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-lg group-hover:flex group-focus-within:flex">
         <button
           type="button"
@@ -369,6 +379,27 @@ function ComponentSettings({
             </Select>
           </Field>
         </>
+      )}
+      {(component.type === "MENU" || component.type === "CATALOG") && (
+        <Field label="Item display">
+          <Select
+            value={component.content.displayMode ?? "VERTICAL"}
+            onValueChange={(value) =>
+              replaceContent({ ...component.content, displayMode: value as LandingPageDisplayMode })
+            }
+          >
+            <SelectTrigger aria-label="Item display">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="VERTICAL">Vertical scrolling grid</SelectItem>
+              <SelectItem value="HORIZONTAL">Horizontal carousel</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="mt-2 text-xs text-stone-500">
+            Set a maximum height in Section settings to keep long lists inside the section.
+          </p>
+        </Field>
       )}
       {component.type === "MENU" && (
         <>
@@ -731,6 +762,30 @@ function SectionSettings({
           onChange={(event) => onChange({ ...section, name: event.target.value })}
         />
       </Field>
+      <Field label="Maximum section height (px)">
+        <Input
+          type="number"
+          aria-label="Maximum section height (px)"
+          min={0}
+          max={3000}
+          step={1}
+          placeholder="Unlimited"
+          value={section.maxHeight || ""}
+          onChange={(event) => {
+            const value = event.target.valueAsNumber;
+            onChange({
+              ...section,
+              maxHeight: Number.isFinite(value)
+                ? Math.min(3000, Math.max(0, Math.round(value)))
+                : 0,
+            });
+          }}
+        />
+        <p className="mt-2 text-xs text-stone-500">
+          Leave blank or enter 0 for unlimited height. Taller content scrolls inside the section.
+          Maximum: 3,000 px.
+        </p>
+      </Field>
       <Field label="Content width">
         <Select
           value={section.contentWidth}
@@ -927,6 +982,7 @@ function SortableSection({
         ref={setAreaRef}
         className={`${isOver ? "ring-4 ring-inset ring-pink-300/60" : ""}`}
         style={{
+          ...sectionScrollStyle(section),
           background: section.backgroundColor || variant.theme.backgroundColor,
           color: section.textColor || variant.theme.textColor,
         }}
@@ -1371,7 +1427,7 @@ export function LandingPageBuilderPage() {
               if (name?.trim()) createVariant.mutate({ name: name.trim() });
             }}
           >
-            <Icon icon="solar:add-circle-linear" /> New
+            <Icon icon="solar:add-circle-linear" /> New from template
           </Button>
           <Button
             variant="outline"

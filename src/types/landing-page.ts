@@ -40,6 +40,7 @@ export type LandingPageComponentType =
 export type LandingPageComponentWidth = "FULL" | "TWO_THIRDS" | "HALF" | "THIRD";
 export type LandingPageSectionContentWidth = "FULL" | "WIDE" | "CONTAINED";
 export type LandingPageSectionSpacing = "NONE" | "SMALL" | "MEDIUM" | "LARGE";
+export type LandingPageDisplayMode = "VERTICAL" | "HORIZONTAL";
 
 type BaseComponent<T extends LandingPageComponentType, C> = {
   id: string;
@@ -68,7 +69,13 @@ export type TextComponent = BaseComponent<
 >;
 export type MenuComponent = BaseComponent<
   "MENU",
-  { heading: string; body: string; menuItemIds: string[]; columns: 2 | 3 | 4 }
+  {
+    heading: string;
+    body: string;
+    menuItemIds: string[];
+    columns: 2 | 3 | 4;
+    displayMode?: LandingPageDisplayMode;
+  }
 >;
 export type CatalogComponent = BaseComponent<
   "CATALOG",
@@ -77,6 +84,7 @@ export type CatalogComponent = BaseComponent<
     body: string;
     catalogItemRefs: Array<{ sourceType: "MENU_ITEM" | "PRODUCT"; sourceId: string }>;
     columns: 2 | 3 | 4;
+    displayMode?: LandingPageDisplayMode;
   }
 >;
 export type GalleryComponent = BaseComponent<
@@ -120,6 +128,7 @@ export type LandingPageSection = {
   contentWidth: LandingPageSectionContentWidth;
   padding: LandingPageSectionSpacing;
   gap: LandingPageSectionSpacing;
+  maxHeight?: number;
   components: LandingPageComponent[];
 };
 
@@ -222,7 +231,13 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
     return {
       ...base,
       type,
-      content: { heading: "Featured menu", body: "", menuItemIds: [], columns: 3 },
+      content: {
+        heading: "Featured menu",
+        body: "",
+        menuItemIds: [],
+        columns: 3,
+        displayMode: "VERTICAL",
+      },
     };
   if (type === "CATALOG")
     return {
@@ -233,6 +248,7 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
         body: "Order food, clothing, and other products from our business.",
         catalogItemRefs: [],
         columns: 3,
+        displayMode: "VERTICAL",
       },
     };
   if (type === "GALLERY")
@@ -278,6 +294,7 @@ export function createLandingSection(
     contentWidth: "WIDE",
     padding: "MEDIUM",
     gap: "MEDIUM",
+    maxHeight: 0,
     components,
   };
 }

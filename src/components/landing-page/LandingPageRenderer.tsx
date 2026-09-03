@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react";
+import { useRef } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
 import { effectivePrice, useCatalogClock } from "@/lib/catalog-discounts";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
@@ -7,6 +8,7 @@ import type {
   LandingCatalogItem,
   LandingMenuItem,
   LandingPageComponent,
+  LandingPageDisplayMode,
   LandingPageSection,
   LandingPageTheme,
 } from "@/types/landing-page";
@@ -78,6 +80,104 @@ function Media({ url, title, className = "" }: { url: string; title: string; cla
   );
 }
 
+export function sectionScrollStyle(section: LandingPageSection): React.CSSProperties {
+  return section.maxHeight && section.maxHeight > 0
+    ? { maxHeight: section.maxHeight, overflowY: "auto", overflowX: "hidden" }
+    : {};
+}
+
+function CatalogItemsLayout({
+  children,
+  heading,
+  columns,
+  displayMode = "VERTICAL",
+  previewDevice,
+  count,
+}: {
+  children: React.ReactNode;
+  heading: string;
+  columns: 2 | 3 | 4;
+  displayMode?: LandingPageDisplayMode;
+  previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
+  count: number;
+}) {
+  const track = useRef<HTMLElement>(null);
+  const horizontal = displayMode === "HORIZONTAL";
+  const previewColumns = Math.min(
+    previewDevice === "MOBILE" ? 1 : previewDevice === "TABLET" ? 2 : columns,
+    count,
+  );
+  const gridClass =
+    columns === 4
+      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+      : columns === 3
+        ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        : "grid-cols-1 sm:grid-cols-2";
+  const carouselClass =
+    columns === 4
+      ? "lg:auto-cols-[calc((100%_-_3.75rem)/4)]"
+      : columns === 3
+        ? "lg:auto-cols-[calc((100%_-_2.5rem)/3)]"
+        : "lg:auto-cols-[calc((100%_-_1.25rem)/2)]";
+  function scroll(direction: number) {
+    const element = track.current;
+    if (!element) return;
+    element.scrollBy({
+      left: direction * element.clientWidth,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
+  }
+  return (
+    <div className="mt-7 min-w-0">
+      {horizontal && count > 1 && (
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-xs opacity-65">Swipe or use the arrows to browse.</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              aria-label={`Previous ${heading} items`}
+              className="rounded-full border p-2 hover:opacity-70"
+              onClick={() => scroll(-1)}
+            >
+              <Icon icon="solar:alt-arrow-left-linear" />
+            </button>
+            <button
+              type="button"
+              aria-label={`Next ${heading} items`}
+              className="rounded-full border p-2 hover:opacity-70"
+              onClick={() => scroll(1)}
+            >
+              <Icon icon="solar:alt-arrow-right-linear" />
+            </button>
+          </div>
+        </div>
+      )}
+      <section
+        ref={track}
+        aria-label={horizontal ? `${heading} carousel` : `${heading} items`}
+        tabIndex={horizontal ? 0 : undefined}
+        className={`grid min-w-0 gap-5 ${horizontal ? `grid-flow-col auto-cols-[85%] snap-x snap-mandatory overflow-x-auto pb-3 ${previewDevice ? "" : `sm:auto-cols-[calc((100%_-_1.25rem)/2)] ${carouselClass}`}` : previewDevice ? "" : gridClass}`}
+        style={
+          previewDevice
+            ? horizontal
+              ? {
+                  gridAutoColumns:
+                    previewDevice === "MOBILE" && count > 1
+                      ? "85%"
+                      : `calc((100% - ${(previewColumns - 1) * 1.25}rem) / ${previewColumns})`,
+                }
+              : { gridTemplateColumns: `repeat(${previewColumns}, minmax(0, 1fr))` }
+            : undefined
+        }
+      >
+        {children}
+      </section>
+    </div>
+  );
+}
+
 function MenuSection({
   component,
   menuItems,
@@ -106,22 +206,12 @@ function MenuSection({
           <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
         )}
         {selected.length ? (
-          <div
-            className={`mt-7 grid gap-5 ${previewDevice ? "" : component.content.columns === 4 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" : component.content.columns === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}
-            style={
-              previewDevice
-                ? {
-                    gridTemplateColumns: `repeat(${Math.min(
-                      previewDevice === "MOBILE"
-                        ? 1
-                        : previewDevice === "TABLET"
-                          ? 2
-                          : component.content.columns,
-                      selected.length,
-                    )}, minmax(0, 1fr))`,
-                  }
-                : undefined
-            }
+          <CatalogItemsLayout
+            heading={component.content.heading}
+            columns={component.content.columns}
+            displayMode={component.content.displayMode}
+            previewDevice={previewDevice}
+            count={selected.length}
           >
             {selected.map((item) => {
               const media = getMenuMediaUrls(item)[0];
@@ -132,7 +222,7 @@ function MenuSection({
               return (
                 <article
                   key={item._id}
-                  className="overflow-hidden border shadow-sm"
+                  className="min-w-0 snap-start overflow-hidden border shadow-sm"
                   style={{
                     background: theme.surfaceColor,
                     borderColor: `${theme.primaryColor}25`,
@@ -172,7 +262,7 @@ function MenuSection({
                 </article>
               );
             })}
-          </div>
+          </CatalogItemsLayout>
         ) : (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
             Select menu items to feature here.
@@ -214,27 +304,17 @@ function CatalogSection({
           <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
         )}
         {selected.length ? (
-          <div
-            className={`mt-7 grid gap-5 ${previewDevice ? "" : component.content.columns === 4 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" : component.content.columns === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}
-            style={
-              previewDevice
-                ? {
-                    gridTemplateColumns: `repeat(${Math.min(
-                      previewDevice === "MOBILE"
-                        ? 1
-                        : previewDevice === "TABLET"
-                          ? 2
-                          : component.content.columns,
-                      selected.length,
-                    )}, minmax(0, 1fr))`,
-                  }
-                : undefined
-            }
+          <CatalogItemsLayout
+            heading={component.content.heading}
+            columns={component.content.columns}
+            displayMode={component.content.displayMode}
+            previewDevice={previewDevice}
+            count={selected.length}
           >
             {selected.map((item) => (
               <article
                 key={item.key}
-                className="overflow-hidden border shadow-sm"
+                className="min-w-0 snap-start overflow-hidden border shadow-sm"
                 style={{
                   background: theme.surfaceColor,
                   borderColor: `${theme.primaryColor}25`,
@@ -293,7 +373,7 @@ function CatalogSection({
                 </div>
               </article>
             ))}
-          </div>
+          </CatalogItemsLayout>
         ) : (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
             Select products to feature here.
@@ -582,10 +662,13 @@ export function LandingPageRenderer({
                 ? "gap-10"
                 : "gap-6";
         return (
-          <div
+          <section
             key={section.id}
             id={section.id}
+            aria-label={section.name}
+            tabIndex={section.maxHeight ? 0 : undefined}
             style={{
+              ...sectionScrollStyle(section),
               background: section.backgroundColor || "transparent",
               color: section.textColor || "inherit",
             }}
@@ -595,7 +678,7 @@ export function LandingPageRenderer({
                 {components.map((component) => (
                   <div
                     key={component.id}
-                    className={
+                    className={`min-w-0 ${
                       component.width === "FULL"
                         ? "col-span-12"
                         : component.width === "TWO_THIRDS"
@@ -603,7 +686,7 @@ export function LandingPageRenderer({
                           : component.width === "HALF"
                             ? "col-span-12 md:col-span-6"
                             : "col-span-12 md:col-span-4"
-                    }
+                    }`}
                   >
                     <LandingPageComponentView
                       component={component}
@@ -617,7 +700,7 @@ export function LandingPageRenderer({
                 ))}
               </div>
             </div>
-          </div>
+          </section>
         );
       })}
       {!enabledCount && (
