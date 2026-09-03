@@ -1,9 +1,10 @@
 import {
   DndContext,
   type DragEndEvent,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  useDraggable,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
@@ -20,8 +21,13 @@ import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import {
+  componentChoices,
+  FloatingComponentToolbar,
+} from "@/components/landing-page/ComponentPalette";
 import {
   LandingPageComponentView,
   sectionScrollStyle,
@@ -56,56 +62,9 @@ import {
 } from "@/types/landing-page";
 import { Header } from "./PigsPage";
 
-const componentChoices: Array<{ type: LandingPageComponentType; label: string; icon: string }> = [
-  { type: "HERO", label: "Hero", icon: "solar:star-fall-linear" },
-  { type: "TEXT", label: "Text", icon: "solar:text-square-linear" },
-  { type: "MENU", label: "Menu", icon: "solar:notebook-bookmark-linear" },
-  { type: "CATALOG", label: "Product catalog", icon: "solar:shop-2-linear" },
-  { type: "GALLERY", label: "Gallery", icon: "solar:gallery-wide-linear" },
-  { type: "CONTACT", label: "Contact", icon: "solar:phone-calling-linear" },
-  { type: "CTA", label: "Call to action", icon: "solar:cursor-square-linear" },
-];
-
 type LandingPageBuilderPayload = Omit<LandingPageBuilderData, "variants"> & {
   variants: LandingPageVariantPayload[];
 };
-
-function PaletteItem({
-  choice,
-  onAdd,
-}: {
-  choice: (typeof componentChoices)[number];
-  onAdd: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `palette:${choice.type}`,
-  });
-  return (
-    <div
-      ref={setNodeRef}
-      className="flex w-full items-center rounded-xl border border-pink-100 bg-white text-left text-sm font-semibold shadow-sm hover:border-pink-300 hover:bg-pink-50"
-      style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.5 : 1 }}
-    >
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left"
-        onClick={onAdd}
-      >
-        <Icon icon={choice.icon} className="size-5 shrink-0 text-pink-700" />
-        <span className="truncate">{choice.label}</span>
-      </button>
-      <button
-        type="button"
-        className="cursor-grab p-3 text-stone-300 hover:text-pink-700"
-        aria-label={`Drag ${choice.label} component`}
-        {...listeners}
-        {...attributes}
-      >
-        <Icon icon="solar:hamburger-menu-linear" />
-      </button>
-    </div>
-  );
-}
 
 function SortableComponent({
   component,
@@ -136,7 +95,8 @@ function SortableComponent({
   return (
     <div
       ref={setNodeRef}
-      className={`group relative min-w-0 border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : component.width === "TWO_THIRDS" ? "col-span-8" : component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
+      id={`builder-component-${component.id}`}
+      className={`scroll-mt-24 scroll-mb-80 group relative min-w-0 border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : component.width === "TWO_THIRDS" ? "col-span-8" : component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -928,7 +888,8 @@ function SortableSection({
   return (
     <div
       ref={setNodeRef}
-      className={`relative border-2 transition-colors ${selectedSectionId === section.id ? "border-pink-500" : "border-transparent hover:border-pink-200"} ${section.enabled ? "" : "opacity-45"}`}
+      id={`builder-section-${section.id}`}
+      className={`scroll-mt-24 relative border-2 transition-colors ${selectedSectionId === section.id ? "border-pink-500" : "border-transparent hover:border-pink-200"} ${section.enabled ? "" : "opacity-45"}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -1035,6 +996,8 @@ export function LandingPageBuilderPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commerceSettingsOpen, setCommerceSettingsOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [activePaletteType, setActivePaletteType] = useState<LandingPageComponentType>();
+  const [addedComponentId, setAddedComponentId] = useState<string>();
   const undoStack = useRef<LandingPageVariant[]>([]);
   const redoStack = useRef<LandingPageVariant[]>([]);
   const sensors = useSensors(
@@ -1056,6 +1019,19 @@ export function LandingPageBuilderPage() {
     setDraft(structuredClone(first));
     setSelectedSectionId(first.sections[0]?.id);
   }, [builder.data, draft]);
+
+  useEffect(() => {
+    if (!addedComponentId) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`builder-component-${addedComponentId}`)?.scrollIntoView({
+        block: "center",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [addedComponentId]);
 
   function commit(next: LandingPageVariant) {
     if (draft) undoStack.current = [...undoStack.current, structuredClone(draft)].slice(-100);
@@ -1133,8 +1109,10 @@ export function LandingPageBuilderPage() {
     });
     setSelectedSectionId(sectionId);
     setSelectedComponentId(component.id);
+    setAddedComponentId(component.id);
   }
   function onDragEnd(event: DragEndEvent) {
+    setActivePaletteType(undefined);
     if (!draft || !event.over) return;
     const activeId = String(event.active.id);
     const overId = String(event.over.id);
@@ -1150,11 +1128,11 @@ export function LandingPageBuilderPage() {
     }
     if (activeId.startsWith("palette:")) {
       if (componentCount() >= 30) return toast.error("Use no more than 30 components");
-      const component = createLandingComponent(
-        activeId.replace("palette:", "") as LandingPageComponentType,
-      );
-      const sectionId = targetSectionId ?? selectedSectionId ?? draft.sections[0]?.id;
-      if (!sectionId) return;
+      const type = event.active.data.current?.componentType as LandingPageComponentType | undefined;
+      if (!type || !componentChoices.some((choice) => choice.type === type) || !targetSectionId)
+        return;
+      const component = createLandingComponent(type);
+      const sectionId = targetSectionId;
       commit({
         ...draft,
         sections: draft.sections.map((section) => {
@@ -1167,6 +1145,7 @@ export function LandingPageBuilderPage() {
       });
       setSelectedSectionId(sectionId);
       setSelectedComponentId(component.id);
+      setAddedComponentId(component.id);
       return;
     }
     if (activeId === overId) return;
@@ -1376,7 +1355,29 @@ export function LandingPageBuilderPage() {
   );
 
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={(args) => {
+        if (String(args.active.id).startsWith("palette:") && args.pointerCoordinates) {
+          const toolbar = document
+            .getElementById("floating-component-toolbar")
+            ?.getBoundingClientRect();
+          const { x, y } = args.pointerCoordinates;
+          if (
+            toolbar &&
+            x >= toolbar.left &&
+            x <= toolbar.right &&
+            y >= toolbar.top &&
+            y <= toolbar.bottom
+          )
+            return [];
+        }
+        return rectIntersection(args);
+      }}
+      onDragStart={({ active }) => setActivePaletteType(active.data.current?.componentType)}
+      onDragCancel={() => setActivePaletteType(undefined)}
+      onDragEnd={onDragEnd}
+    >
       <div className="space-y-5">
         <Header
           title="Landing page builder"
@@ -1482,18 +1483,7 @@ export function LandingPageBuilderPage() {
 
         <div className="grid gap-4 xl:grid-cols-[210px_minmax(0,1fr)_320px]">
           <Card className="h-fit p-4 xl:sticky xl:top-20">
-            <p className="text-xs font-bold uppercase tracking-widest text-stone-400">Components</p>
-            <p className="mt-1 text-sm text-stone-500">Drag or click to add</p>
-            <div className="mt-4 space-y-2">
-              {componentChoices.map((choice) => (
-                <PaletteItem
-                  key={choice.type}
-                  choice={choice}
-                  onAdd={() => addComponent(choice.type)}
-                />
-              ))}
-            </div>
-            <div className="mt-5 border-t border-pink-100 pt-4">
+            <div>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
                   Sections
@@ -1823,7 +1813,36 @@ export function LandingPageBuilderPage() {
             )}
           </Card>
         </div>
+        <FloatingComponentToolbar
+          key={draft._id}
+          sections={draft.sections}
+          selectedSectionId={selectedSectionId}
+          componentCount={componentCount()}
+          dragging={Boolean(activePaletteType)}
+          onSelectSection={(id) => {
+            setSelectedSectionId(id);
+            setSelectedComponentId(undefined);
+          }}
+          onAdd={addComponent}
+        />
       </div>
+      {createPortal(
+        <DragOverlay dropAnimation={null} zIndex={45}>
+          {activePaletteType && (
+            <div className="pointer-events-none flex w-44 items-center gap-3 rounded-xl border border-pink-300 bg-white p-3 text-sm font-semibold text-pink-800 shadow-xl">
+              <Icon
+                icon={
+                  componentChoices.find((choice) => choice.type === activePaletteType)?.icon ??
+                  "solar:add-circle-linear"
+                }
+                className="size-5"
+              />
+              {componentChoices.find((choice) => choice.type === activePaletteType)?.label}
+            </div>
+          )}
+        </DragOverlay>,
+        document.body,
+      )}
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
