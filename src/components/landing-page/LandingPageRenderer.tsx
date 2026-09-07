@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useRef } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
-import { effectivePrice, useCatalogClock } from "@/lib/catalog-discounts";
+import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
 import { formatPeso } from "@/lib/utils";
 import type {
@@ -295,7 +295,7 @@ function CatalogSection({
       ),
     )
     .filter((item): item is LandingCatalogItem => Boolean(item));
-  const now = useCatalogClock();
+  const now = useCatalogPricingClock(selected.map((item) => item.discount));
   return (
     <section id="products" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
       <div className="mx-auto max-w-6xl">
@@ -339,6 +339,7 @@ function CatalogSection({
                   )}
                   <div className="mt-3" style={{ color: theme.primaryColor }}>
                     <CatalogDiscountPrice
+                      liveCountdown
                       now={now}
                       from={item.variants.length > 0}
                       pricing={

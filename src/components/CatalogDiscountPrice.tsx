@@ -4,9 +4,15 @@ import {
   discountStatus,
   effectivePrice,
   type ProductDiscount,
+  useCatalogClock,
 } from "@/lib/catalog-discounts";
 import { formatPeso } from "@/lib/utils";
 import { Badge } from "./ui/badge";
+
+export function LiveDiscountCountdown({ discount }: { discount?: ProductDiscount | null }) {
+  const now = useCatalogClock();
+  return <DiscountCountdown discount={discount} now={now} />;
+}
 
 export function DiscountCountdown({
   discount,
@@ -39,11 +45,13 @@ export function CatalogDiscountPrice({
   now,
   from = false,
   showCountdown = true,
+  liveCountdown = false,
 }: {
   pricing: DiscountPricing;
   now: number;
   from?: boolean;
   showCountdown?: boolean;
+  liveCountdown?: boolean;
 }) {
   const price = effectivePrice(pricing, now);
   const original = Number(pricing.originalPrice ?? pricing.price ?? 0);
@@ -56,7 +64,9 @@ export function CatalogDiscountPrice({
         )}
         {formatPeso(price)}
       </p>
-      {showCountdown && <DiscountCountdown discount={pricing.discount} now={now} />}
+      {showCountdown && (liveCountdown
+        ? <LiveDiscountCountdown discount={pricing.discount} />
+        : <DiscountCountdown discount={pricing.discount} now={now} />)}
     </div>
   );
 }

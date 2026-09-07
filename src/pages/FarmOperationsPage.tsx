@@ -21,7 +21,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPeso, number } from "@/lib/utils";
 import type { InventoryItem, Pig } from "@/types/domain";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type Batch = {
   _id: string;

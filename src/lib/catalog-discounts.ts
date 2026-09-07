@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 export type ProductDiscount = {
   id: string;
@@ -42,13 +42,35 @@ function subscribe(listener: () => void) {
   };
 }
 export function useCatalogClock(serverTime?: string, receivedAt?: number) {
+  useServerClock(serverTime, receivedAt);
+  return useSyncExternalStore(subscribe, () => clockNow);
+}
+
+function useServerClock(serverTime?: string, receivedAt?: number) {
   useEffect(() => {
     if (serverTime && Number.isFinite(Date.parse(serverTime))) {
       clockOffset = Date.parse(serverTime) - (receivedAt || Date.now());
       tick();
     }
   }, [serverTime, receivedAt]);
-  return useSyncExternalStore(subscribe, () => clockNow);
+}
+
+/** Pricing changes at promotion boundaries; countdown children still tick every second. */
+export function useCatalogPricingClock(
+  discounts: Array<ProductDiscount | null | undefined>, serverTime?: string, receivedAt?: number,
+) {
+  useServerClock(serverTime, receivedAt);
+  const boundaries = useMemo(() => discounts.flatMap((discount) => discount
+    ? [Date.parse(discount.startsAt), Date.parse(discount.endsAt)] : [])
+    .filter(Number.isFinite).sort((a, b) => a - b), [discounts]);
+  return useSyncExternalStore(subscribe, () => {
+    let latest = boundaries.length ? (boundaries[0] ?? 0) - 1 : 0;
+    for (const boundary of boundaries) {
+      if (boundary > clockNow) break;
+      latest = boundary;
+    }
+    return latest;
+  });
 }
 
 export function discountStatus(discount: ProductDiscount | CatalogDiscount, now: number) {

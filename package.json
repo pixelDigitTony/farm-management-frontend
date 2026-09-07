@@ -9,7 +9,15 @@
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview",
     "check": "biome check . && tsc -b --pretty false",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:architecture": "node scripts/check-architecture.mjs",
+    "test:lighthouse": "lhci autorun --config=lighthouserc.cjs",
+    "test:bundle": "node scripts/bundle-report.mjs",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "build:test": "VITE_API_URL=/api vite build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -39,14 +47,28 @@
     "valibot": "^1.4.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@biomejs/biome": "^2.5.8",
+    "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.63.0",
+    "@swc/core": "^1.16.2",
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/coverage-v8": "^4.1.10",
+    "dependency-cruiser": "^18.2.0",
+    "fast-check": "^4.9.0",
+    "jsdom": "^30.0.1",
+    "msw": "^2.15.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1"
+    "typescript-parser": "npm:typescript@^6.0.3",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
   }
 }

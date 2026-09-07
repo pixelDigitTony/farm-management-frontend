@@ -6,7 +6,7 @@ import { api, sessionUserStore } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type Role = { level: number; name: string };
 type Employee = {

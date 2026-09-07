@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import {
   api,
@@ -10,13 +10,10 @@ import {
 } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import { AppShell } from "@/layout/AppShell";
+const AppShell = lazy(() => import("@/layout/AppShell").then((m) => ({ default: m.AppShell })));
 import { getPublicSiteSlugFromHostname } from "@/lib/public-site";
 
 const AuthPage = lazy(() => import("@/pages/AuthPage").then((m) => ({ default: m.AuthPage })));
-const RegisterPage = lazy(() =>
-  import("@/pages/RegisterPage").then((m) => ({ default: m.RegisterPage })),
-);
 const VerifyEmailPage = lazy(() =>
   import("@/pages/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage })),
 );
@@ -89,10 +86,14 @@ function Protected() {
     },
     retry: false,
   });
+  useEffect(() => {
+    if (session.isError) {
+      tokenStore.clear();
+      sessionUserStore.clear();
+    }
+  }, [session.isError]);
   if (session.isLoading) return <PageSkeleton />;
   if (session.isError || !session.data) {
-    tokenStore.clear();
-    sessionUserStore.clear();
     return <Navigate to="/login" replace />;
   }
   if (!session.data.emailVerified) return <AccountGate user={session.data} kind="email" />;

@@ -1,0 +1,41 @@
+export type InventoryLot = {
+  _id: string;
+  itemId: string;
+  lotCode: string;
+  sourceType: string;
+  businessUnit: string;
+  receivedDate: string;
+  remainingQuantityCached: string;
+  unitCost: string;
+  status: string;
+};
+export type InventoryReceipt = {
+  lotId: string;
+  movementDate: string;
+  itemId: string;
+  quantity: string;
+  unitCost: string;
+  purchaseQuantity: string;
+  purchaseUnit: string;
+  measurementPerPurchaseUnit: string;
+  totalPurchaseCost: string;
+  businessUnit: string;
+  storageLocation: string;
+  expiryDate: string | null;
+  amountPaid: string;
+  accountId: string;
+  notes: string;
+};
+export type InventoryMovement = {
+  _id: string;
+  movementNumber: string;
+  movementDate: string;
+  movementType: string;
+  itemId: string;
+  fromBusinessUnit?: string;
+  toBusinessUnit?: string;
+  quantity: string;
+  unitCostSnapshot: string;
+  totalCost: string;
+};
+export type CashAccount = { _id: string; name: string };

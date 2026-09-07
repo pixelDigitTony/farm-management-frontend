@@ -13,7 +13,7 @@ import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { formatPeso } from "@/lib/utils";
 import type { CustomerOrder, CustomerOrderStatus } from "@/types/domain";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 const statuses: Array<"ALL" | CustomerOrderStatus> = [
   "PENDING",

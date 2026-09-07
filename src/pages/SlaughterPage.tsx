@@ -20,7 +20,7 @@ import {
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { formatPeso, number } from "@/lib/utils";
 import type { Pig } from "@/types/domain";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type Part = {
   name: string;

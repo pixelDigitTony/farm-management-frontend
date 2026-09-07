@@ -60,7 +60,7 @@ import {
   createLandingSection,
   normalizeLandingPageVariant,
 } from "@/types/landing-page";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type LandingPageBuilderPayload = Omit<LandingPageBuilderData, "variants"> & {
   variants: LandingPageVariantPayload[];

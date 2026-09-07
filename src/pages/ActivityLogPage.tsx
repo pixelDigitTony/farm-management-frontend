@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type ActivityEntry = {
   _id: string;

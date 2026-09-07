@@ -4,13 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "@/api/client";
-import { CatalogDiscountPrice, DiscountCountdown } from "@/components/CatalogDiscountPrice";
+import { CatalogDiscountPrice, LiveDiscountCountdown } from "@/components/CatalogDiscountPrice";
 import { LandingPageRenderer } from "@/components/landing-page/LandingPageRenderer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
-import { effectivePrice, useCatalogClock } from "@/lib/catalog-discounts";
+import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import { formatPeso } from "@/lib/utils";
 import type {
   LandingCatalogItem,
@@ -89,11 +89,11 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   );
   const page = useQuery({
     queryKey: ["public-landing-page", slug],
-    queryFn: () => api<PublicLandingPage>(`/public/landing-pages/${encodeURIComponent(slug)}`),
+    queryFn: ({ signal }) => api<PublicLandingPage>(`/public/landing-pages/${encodeURIComponent(slug)}`, { signal }),
     retry: false,
     refetchInterval: 30_000,
   });
-  const now = useCatalogClock(page.data?.serverTime, page.dataUpdatedAt);
+  const now = useCatalogPricingClock((page.data?.catalogItems ?? []).map((item) => item.discount), page.data?.serverTime, page.dataUpdatedAt);
   const boundary = useRef("");
   useEffect(() => {
     const next = (page.data?.catalogItems ?? [])
@@ -147,14 +147,19 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(cartKey(slug));
-      setCart(stored ? (JSON.parse(stored) as CartLine[]) : []);
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      setCart(Array.isArray(parsed) ? parsed.filter((line): line is CartLine =>
+        Boolean(line && typeof line.key === "string" && typeof line.sourceId === "string" &&
+          ["MENU_ITEM", "PRODUCT"].includes(line.sourceType) && Number.isInteger(line.quantity) &&
+          line.quantity > 0 && line.quantity <= 99 && Number.isFinite(line.unitPrice))) : []);
     } catch {
       setCart([]);
     }
     setCartReadySlug(slug);
   }, [slug]);
   useEffect(() => {
-    if (cartReadySlug === slug) localStorage.setItem(cartKey(slug), JSON.stringify(cart));
+    if (cartReadySlug !== slug) return;
+    try { localStorage.setItem(cartKey(slug), JSON.stringify(cart)); } catch { /* Keep the current cart usable when storage is unavailable. */ }
   }, [cart, cartReadySlug, slug]);
   const cartCount = cart.reduce((total, line) => total + line.quantity, 0);
   const cartTotal = useMemo(
@@ -323,7 +328,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
             Select the size, color, or style before adding this item.
           </DialogDescription>
           <div className="mt-5 space-y-3">
-            <DiscountCountdown discount={chosenItem?.discount} now={now} />
+            <LiveDiscountCountdown discount={chosenItem?.discount} />
             {chosenItem?.variants.map((variant) => (
               <button
                 key={variant.variantId}
@@ -345,6 +350,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                 <div className="text-right">
                   <div className="text-pink-700">
                     <CatalogDiscountPrice
+                      liveCountdown
                       pricing={{ ...variant, discount: chosenItem.discount }}
                       now={now}
                       showCountdown={false}

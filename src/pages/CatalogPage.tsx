@@ -14,7 +14,7 @@ import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useCatalogClock } from "@/lib/catalog-discounts";
 import type { CatalogProduct } from "@/types/domain";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type VariantDraft = {
   variantId?: string;

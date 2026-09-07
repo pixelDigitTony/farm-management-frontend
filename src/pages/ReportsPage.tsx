@@ -8,7 +8,7 @@ import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPeso, number } from "@/lib/utils";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type Group = {
   _id: string;

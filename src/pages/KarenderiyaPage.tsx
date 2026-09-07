@@ -27,7 +27,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { getMenuMediaEmbed, getMenuMediaUrls, normalizeMediaUrls } from "@/lib/google-drive";
 import { formatPeso } from "@/lib/utils";
 import type { InventoryItem, KarenderiyaOrder, MenuItem, Recipe } from "@/types/domain";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type PriceResult = {
   ingredientCost: string;

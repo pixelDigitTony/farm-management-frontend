@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type AccountStatus =
   | "ACTIVE"

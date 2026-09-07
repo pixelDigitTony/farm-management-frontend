@@ -5,3 +5,10 @@ dist/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+.dependencies-before-testing/
+coverage/
+playwright-report/
+test-results/
+.lighthouseci/
+artifacts/

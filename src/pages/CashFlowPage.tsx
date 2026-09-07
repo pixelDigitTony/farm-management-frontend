@@ -1,3 +1,4 @@
+import { invalidateOperation } from "@/api/invalidation";
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -20,7 +21,7 @@ import {
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPeso } from "@/lib/utils";
-import { Header } from "./PigsPage";
+import { Header } from "@/components/PageHeader";
 
 type Expense = {
   _id: string;
@@ -160,8 +161,7 @@ export function CashFlowPage() {
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["expenses"] });
-      client.invalidateQueries({ queryKey: ["dashboard"] });
+      void invalidateOperation(client, "expense");
       setOpen(false);
       setEditing(undefined);
       toast.success(editing ? "Expense updated" : "Expense recorded");
@@ -171,8 +171,7 @@ export function CashFlowPage() {
   const remove = useMutation({
     mutationFn: (id: string) => api<void>(`/operations/expenses/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["expenses"] });
-      client.invalidateQueries({ queryKey: ["dashboard"] });
+      void invalidateOperation(client, "expense");
       toast.success("Expense deleted and its cash effect reversed");
     },
     onError: (error) => toast.error(error.message),
@@ -181,9 +180,7 @@ export function CashFlowPage() {
     mutationFn: (payload: unknown) =>
       api("/operations/cash", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["cash-transactions"] });
-      client.invalidateQueries({ queryKey: ["cash-accounts"] });
-      client.invalidateQueries({ queryKey: ["dashboard"] });
+      void invalidateOperation(client, "cash");
       setCashOpen(false);
       toast.success("Cash movement posted");
     },
