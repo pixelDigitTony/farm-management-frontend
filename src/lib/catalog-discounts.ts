@@ -57,12 +57,21 @@ function useServerClock(serverTime?: string, receivedAt?: number) {
 
 /** Pricing changes at promotion boundaries; countdown children still tick every second. */
 export function useCatalogPricingClock(
-  discounts: Array<ProductDiscount | null | undefined>, serverTime?: string, receivedAt?: number,
+  discounts: Array<ProductDiscount | null | undefined>,
+  serverTime?: string,
+  receivedAt?: number,
 ) {
   useServerClock(serverTime, receivedAt);
-  const boundaries = useMemo(() => discounts.flatMap((discount) => discount
-    ? [Date.parse(discount.startsAt), Date.parse(discount.endsAt)] : [])
-    .filter(Number.isFinite).sort((a, b) => a - b), [discounts]);
+  const boundaries = useMemo(
+    () =>
+      discounts
+        .flatMap((discount) =>
+          discount ? [Date.parse(discount.startsAt), Date.parse(discount.endsAt)] : [],
+        )
+        .filter(Number.isFinite)
+        .sort((a, b) => a - b),
+    [discounts],
+  );
   return useSyncExternalStore(subscribe, () => {
     let latest = boundaries.length ? (boundaries[0] ?? 0) - 1 : 0;
     for (const boundary of boundaries) {

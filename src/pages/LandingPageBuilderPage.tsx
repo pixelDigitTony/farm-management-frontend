@@ -32,6 +32,7 @@ import {
   LandingPageComponentView,
   sectionScrollStyle,
 } from "@/components/landing-page/LandingPageRenderer";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -60,7 +61,6 @@ import {
   createLandingSection,
   normalizeLandingPageVariant,
 } from "@/types/landing-page";
-import { Header } from "@/components/PageHeader";
 
 type LandingPageBuilderPayload = Omit<LandingPageBuilderData, "variants"> & {
   variants: LandingPageVariantPayload[];

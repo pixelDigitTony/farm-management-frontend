@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, api, resources } from "@/api/client";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,6 @@ import {
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { formatPeso, number } from "@/lib/utils";
 import type { Pig } from "@/types/domain";
-import { Header } from "@/components/PageHeader";
 
 type Part = {
   name: string;

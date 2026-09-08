@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { CatalogDiscountManager } from "@/components/CatalogDiscountManager";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,6 @@ import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useCatalogClock } from "@/lib/catalog-discounts";
 import type { CatalogProduct } from "@/types/domain";
-import { Header } from "@/components/PageHeader";
 
 type VariantDraft = {
   variantId?: string;

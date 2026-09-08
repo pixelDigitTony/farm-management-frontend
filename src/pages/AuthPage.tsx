@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api, tokenStore } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -103,11 +103,21 @@ export function AuthPage() {
         className="mt-7"
       >
         <TabsList>
-          <TabsTrigger value="EMAIL_PASSWORD">Email</TabsTrigger>
-          <TabsTrigger value="PHONE_MPIN">Phone + MPIN</TabsTrigger>
+          <TabsTrigger id="login-email-tab" aria-controls="login-fields" value="EMAIL_PASSWORD">
+            Email
+          </TabsTrigger>
+          <TabsTrigger id="login-phone-tab" aria-controls="login-fields" value="PHONE_MPIN">
+            Phone + MPIN
+          </TabsTrigger>
         </TabsList>
       </Tabs>
-      <form className="mt-6 space-y-4" onSubmit={submit}>
+      <form
+        id="login-fields"
+        role="tabpanel"
+        aria-labelledby={method === "EMAIL_PASSWORD" ? "login-email-tab" : "login-phone-tab"}
+        className="mt-6 space-y-4"
+        onSubmit={submit}
+      >
         <AnimatePresence mode="wait" initial={false}>
           {method === "EMAIL_PASSWORD" ? (
             <motion.div
@@ -118,8 +128,9 @@ export function AuthPage() {
               className="space-y-4"
             >
               <div>
-                <Label>Email address</Label>
+                <Label htmlFor="login-email">Email address</Label>
                 <Input
+                  id="login-email"
                   name="email"
                   type="email"
                   autoComplete="email"
@@ -128,8 +139,9 @@ export function AuthPage() {
                 />
               </div>
               <div>
-                <Label>Password</Label>
+                <Label htmlFor="login-password">Password</Label>
                 <Input
+                  id="login-password"
                   name="password"
                   type="password"
                   autoComplete="current-password"
@@ -154,8 +166,9 @@ export function AuthPage() {
               className="space-y-4"
             >
               <div>
-                <Label>Philippine mobile number</Label>
+                <Label htmlFor="login-phone">Philippine mobile number</Label>
                 <Input
+                  id="login-phone"
                   name="phone"
                   type="tel"
                   inputMode="tel"
@@ -165,8 +178,9 @@ export function AuthPage() {
                 />
               </div>
               <div>
-                <Label>6-digit MPIN</Label>
+                <Label htmlFor="login-mpin">6-digit MPIN</Label>
                 <Input
+                  id="login-mpin"
                   name="mpin"
                   type="password"
                   inputMode="numeric"
@@ -233,10 +247,11 @@ export function AuthPage() {
           </DialogDescription>
           <form className="mt-6 space-y-4" onSubmit={requestRecovery}>
             <div>
-              <Label>
+              <Label htmlFor="recovery-identifier">
                 {recoveryKind === "MPIN" ? "Philippine mobile number" : "Email address"}
               </Label>
               <Input
+                id="recovery-identifier"
                 name="identifier"
                 type={recoveryKind === "MPIN" ? "tel" : "email"}
                 inputMode={recoveryKind === "MPIN" ? "tel" : "email"}

@@ -64,9 +64,12 @@ export function CatalogDiscountPrice({
         )}
         {formatPeso(price)}
       </p>
-      {showCountdown && (liveCountdown
-        ? <LiveDiscountCountdown discount={pricing.discount} />
-        : <DiscountCountdown discount={pricing.discount} now={now} />)}
+      {showCountdown &&
+        (liveCountdown ? (
+          <LiveDiscountCountdown discount={pricing.discount} />
+        ) : (
+          <DiscountCountdown discount={pricing.discount} now={now} />
+        ))}
     </div>
   );
 }

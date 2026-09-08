@@ -1,0 +1,64 @@
+name: Paired browser and Lighthouse checks
+on:
+  workflow_dispatch:
+    inputs:
+      backend_ref:
+        description: Backend commit SHA or branch to test with this frontend
+        required: true
+        default: main
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: farm-management-frontend
+      - uses: actions/checkout@v4
+        with:
+          repository: pixelDigitTony/farm-management-backend
+          ref: ${{ inputs.backend_ref }}
+          path: farm-management-backend
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            farm-management-frontend/package-lock.json
+            farm-management-backend/package-lock.json
+      - run: npm ci
+        working-directory: farm-management-backend
+      - run: npm ci
+        working-directory: farm-management-frontend
+      - name: Record both tested revisions
+        run: |
+          mkdir -p farm-management-frontend/artifacts
+          git -C farm-management-frontend rev-parse HEAD > farm-management-frontend/artifacts/frontend-revision.txt
+          git -C farm-management-backend rev-parse HEAD > farm-management-frontend/artifacts/backend-revision.txt
+      - run: npx playwright install --with-deps chromium firefox webkit
+        working-directory: farm-management-frontend
+      - run: npm run test:e2e
+        working-directory: farm-management-frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: |
+            farm-management-frontend/playwright-report/
+            farm-management-frontend/test-results/
+          retention-days: 14
+      - run: npm run test:lighthouse
+        working-directory: farm-management-frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-results
+          path: |
+            farm-management-frontend/artifacts/
+            farm-management-frontend/.lighthouseci/
+            farm-management-frontend/playwright-report/
+          retention-days: 14

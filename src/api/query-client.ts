@@ -6,7 +6,10 @@ export function createQueryClient() {
 
 /** Cache contents belong to an authenticated identity, including across browser tabs. */
 export function bindSessionCache(client: QueryClient) {
-  const clear = () => { void client.cancelQueries(); client.clear(); };
+  const clear = () => {
+    void client.cancelQueries();
+    client.clear();
+  };
   const storage = (event: StorageEvent) => {
     if (event.key === "miss-v-user" && event.oldValue !== event.newValue) clear();
     if (event.key === null) clear();

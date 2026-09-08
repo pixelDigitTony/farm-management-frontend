@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:architecture": "node scripts/check-architecture.mjs",
-    "test:lighthouse": "lhci autorun --config=lighthouserc.cjs",
+    "test:lighthouse": "playwright test --config=playwright.lighthouse.config.ts",
     "test:bundle": "node scripts/bundle-report.mjs",
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "build:test": "VITE_API_URL=/api vite build"

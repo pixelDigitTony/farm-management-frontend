@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { api } from "@/api/client";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { Header } from "@/components/PageHeader";
 
 type ActivityEntry = {
   _id: string;

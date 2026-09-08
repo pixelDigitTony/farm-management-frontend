@@ -1,12 +1,11 @@
-import type { InventoryReceipt, InventoryLot } from "./types";
-import { useInventoryQueries } from "./queries";
-import { invalidateOperation } from "@/api/invalidation";
 import { Icon } from "@iconify/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, resources } from "@/api/client";
+import { invalidateOperation } from "@/api/invalidation";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,7 +23,8 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatPeso, number, toFiniteNumber } from "@/lib/utils";
 import type { InventoryItem } from "@/types/domain";
-import { Header } from "@/components/PageHeader";
+import { useInventoryQueries } from "./queries";
+import type { InventoryLot, InventoryReceipt } from "./types";
 
 type ReceiptDraft = {
   itemId: string;
@@ -160,7 +160,15 @@ export function InventoryPage() {
     return <PageSkeleton cards={8} />;
   if (isError) return <QueryError message={error.message} retry={() => refetch()} />;
   for (const result of [lots, movements, accounts]) {
-    if (result.isError) return <QueryError message={result.error.message} retry={() => { void result.refetch(); }} />;
+    if (result.isError)
+      return (
+        <QueryError
+          message={result.error.message}
+          retry={() => {
+            void result.refetch();
+          }}
+        />
+      );
   }
   return (
     <div className="space-y-6">

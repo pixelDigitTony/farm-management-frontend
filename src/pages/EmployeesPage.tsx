@@ -3,10 +3,10 @@ import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, sessionUserStore } from "@/api/client";
+import { Header } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { Header } from "@/components/PageHeader";
 
 type Role = { level: number; name: string };
 type Employee = {

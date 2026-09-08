@@ -11,11 +11,17 @@ export function useInventoryQueries() {
   });
   const lots = useQuery({
     queryKey: ["inventory-lots", identity],
-    queryFn: ({ signal }) => resources.list<InventoryLot>("inventory-lots", "?limit=100&sort=-receivedDate", signal),
+    queryFn: ({ signal }) =>
+      resources.list<InventoryLot>("inventory-lots", "?limit=100&sort=-receivedDate", signal),
   });
   const movements = useQuery({
     queryKey: ["inventory-movements", identity],
-    queryFn: ({ signal }) => resources.list<InventoryMovement>("inventory-movements", "?limit=100&sort=-movementDate", signal),
+    queryFn: ({ signal }) =>
+      resources.list<InventoryMovement>(
+        "inventory-movements",
+        "?limit=100&sort=-movementDate",
+        signal,
+      ),
   });
   const accounts = useQuery({
     queryKey: ["cash-accounts", identity],

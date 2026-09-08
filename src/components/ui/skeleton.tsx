@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 const metricSkeletons = ["metric-a", "metric-b", "metric-c", "metric-d"];
@@ -19,14 +18,7 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function PageSkeleton({ cards = 6 }: { cards?: number }) {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.2 }}
-      role="status"
-      aria-label="Loading page"
-      className="space-y-6"
-    >
+    <div role="status" aria-label="Loading page" className="page-skeleton-enter space-y-6">
       <div className="space-y-3">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-4 w-96 max-w-full" />
@@ -42,6 +34,6 @@ export function PageSkeleton({ cards = 6 }: { cards?: number }) {
         ))}
       </div>
       <span className="sr-only">Loading Miss V Business data…</span>
-    </motion.div>
+    </div>
   );
 }

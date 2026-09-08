@@ -4,7 +4,10 @@ import { expect, test } from "@playwright/test";
 test("published catalog loads and preserves the cart after reload", async ({ page }) => {
   await page.goto("/site/test-farm");
   await expect(page.getByRole("heading", { name: "Test Farm", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /add to cart/i }).first().click();
+  await page
+    .getByRole("button", { name: /add to cart/i })
+    .first()
+    .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: /cart/i }).first().click();
@@ -24,13 +27,33 @@ test("owner can log in and reach inventory", async ({ page }) => {
   await page.getByRole("button", { name: /sign in/i }).click();
   await expect(page).toHaveURL("http://127.0.0.1:4173/");
   await page.goto("/inventory");
-  await expect(page.getByRole("heading", { name: "Inventory", exact: true, level: 2 })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Inventory", exact: true, level: 2 }),
+  ).toBeVisible();
   await expect(page.getByText("Test feed", { exact: true })).toBeVisible();
 });
 
 test("public landing page has no automated WCAG A/AA violations", async ({ page }) => {
   await page.goto("/site/test-farm");
   await expect(page.getByRole("heading", { name: "Test Farm", exact: true })).toBeVisible();
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+    .analyze();
   expect(results.violations).toEqual([]);
+});
+
+test("login methods expose labeled fields and accessible tab panels", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByLabel("Email address", { exact: true })).toBeVisible();
+  for (const name of ["Email", "Phone + MPIN"]) {
+    await page.getByRole("tab", { name, exact: true }).click();
+    await expect(page.getByRole("tabpanel", { name, exact: true })).toBeVisible();
+    if (name === "Phone + MPIN") await expect(page.getByLabel("6-digit MPIN")).toBeVisible();
+    // Audit the settled form, after AnimatePresence has completed the method transition.
+    await expect(page.locator("#login-fields > div").first()).toHaveCSS("opacity", "1");
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+      .analyze();
+    expect(results.violations).toEqual([]);
+  }
 });

@@ -89,11 +89,16 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   );
   const page = useQuery({
     queryKey: ["public-landing-page", slug],
-    queryFn: ({ signal }) => api<PublicLandingPage>(`/public/landing-pages/${encodeURIComponent(slug)}`, { signal }),
+    queryFn: ({ signal }) =>
+      api<PublicLandingPage>(`/public/landing-pages/${encodeURIComponent(slug)}`, { signal }),
     retry: false,
     refetchInterval: 30_000,
   });
-  const now = useCatalogPricingClock((page.data?.catalogItems ?? []).map((item) => item.discount), page.data?.serverTime, page.dataUpdatedAt);
+  const now = useCatalogPricingClock(
+    (page.data?.catalogItems ?? []).map((item) => item.discount),
+    page.data?.serverTime,
+    page.dataUpdatedAt,
+  );
   const boundary = useRef("");
   useEffect(() => {
     const next = (page.data?.catalogItems ?? [])
@@ -148,10 +153,22 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     try {
       const stored = localStorage.getItem(cartKey(slug));
       const parsed: unknown = stored ? JSON.parse(stored) : [];
-      setCart(Array.isArray(parsed) ? parsed.filter((line): line is CartLine =>
-        Boolean(line && typeof line.key === "string" && typeof line.sourceId === "string" &&
-          ["MENU_ITEM", "PRODUCT"].includes(line.sourceType) && Number.isInteger(line.quantity) &&
-          line.quantity > 0 && line.quantity <= 99 && Number.isFinite(line.unitPrice))) : []);
+      setCart(
+        Array.isArray(parsed)
+          ? parsed.filter((line): line is CartLine =>
+              Boolean(
+                line &&
+                  typeof line.key === "string" &&
+                  typeof line.sourceId === "string" &&
+                  ["MENU_ITEM", "PRODUCT"].includes(line.sourceType) &&
+                  Number.isInteger(line.quantity) &&
+                  line.quantity > 0 &&
+                  line.quantity <= 99 &&
+                  Number.isFinite(line.unitPrice),
+              ),
+            )
+          : [],
+      );
     } catch {
       setCart([]);
     }
@@ -159,7 +176,11 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   }, [slug]);
   useEffect(() => {
     if (cartReadySlug !== slug) return;
-    try { localStorage.setItem(cartKey(slug), JSON.stringify(cart)); } catch { /* Keep the current cart usable when storage is unavailable. */ }
+    try {
+      localStorage.setItem(cartKey(slug), JSON.stringify(cart));
+    } catch {
+      /* Keep the current cart usable when storage is unavailable. */
+    }
   }, [cart, cartReadySlug, slug]);
   const cartCount = cart.reduce((total, line) => total + line.quantity, 0);
   const cartTotal = useMemo(

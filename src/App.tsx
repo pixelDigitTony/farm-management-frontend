@@ -10,7 +10,9 @@ import {
 } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/skeleton";
+
 const AppShell = lazy(() => import("@/layout/AppShell").then((m) => ({ default: m.AppShell })));
+
 import { getPublicSiteSlugFromHostname } from "@/lib/public-site";
 
 const AuthPage = lazy(() => import("@/pages/AuthPage").then((m) => ({ default: m.AuthPage })));

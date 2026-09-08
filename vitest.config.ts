@@ -7,6 +7,11 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.{ts,tsx}"],
     setupFiles: ["./tests/setup.ts"],
     maxWorkers: 2,
-    coverage: { provider: "v8", include: ["src/**/*.{ts,tsx}"], exclude: ["src/main.tsx"], reporter: ["text", "json-summary", "html"] },
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/main.tsx"],
+      reporter: ["text", "json-summary", "html"],
+    },
   },
 });

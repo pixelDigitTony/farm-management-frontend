@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,6 @@ import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { formatPeso } from "@/lib/utils";
 import type { CustomerOrder, CustomerOrderStatus } from "@/types/domain";
-import { Header } from "@/components/PageHeader";
 
 const statuses: Array<"ALL" | CustomerOrderStatus> = [
   "PENDING",

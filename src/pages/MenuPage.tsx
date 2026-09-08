@@ -10,6 +10,7 @@ import {
   type MenuMediaLink,
 } from "@/components/GoogleDriveMediaFields";
 import { MenuViewDialog } from "@/components/MenuViewDialog";
+import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,6 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { getMenuMediaEmbed, getMenuMediaUrls, normalizeMediaUrls } from "@/lib/google-drive";
 import { formatPeso, number } from "@/lib/utils";
 import type { InventoryItem, MenuItem, Recipe } from "@/types/domain";
-import { Header } from "@/components/PageHeader";
 
 type PriceResult = {
   ingredientCost: string;

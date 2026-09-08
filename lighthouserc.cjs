@@ -14,6 +14,9 @@ module.exports = {
         "categories:seo": ["error", { minScore: 1, aggregationMethod: "median" }],
       },
     },
-    upload: { target: "filesystem", outputDir: `artifacts/lighthouse-${desktop ? "desktop" : "mobile"}` },
+    upload: {
+      target: "filesystem",
+      outputDir: `artifacts/lighthouse-${desktop ? "desktop" : "mobile"}`,
+    },
   },
 };
