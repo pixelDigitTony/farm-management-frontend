@@ -51,7 +51,6 @@ import type {
   LandingPageBuilderData,
   LandingPageComponent,
   LandingPageComponentType,
-  LandingPageDisplayMode,
   LandingPageSection,
   LandingPageVariant,
   LandingPageVariantPayload,
@@ -103,19 +102,13 @@ function SortableComponent({
         opacity: isDragging ? 0.5 : undefined,
       }}
     >
-      {component.type !== "CATALOG" && (
+      {component.type !== "CATALOG" && component.type !== "MENU" && (
         <button
           type="button"
           aria-label={`Edit ${component.type.toLowerCase()} component`}
-          className={
-            component.type === "MENU"
-              ? "absolute left-2 top-2 z-20 rounded-lg bg-white px-3 py-1 text-xs font-semibold text-pink-700 shadow"
-              : "absolute inset-0 z-10 cursor-pointer"
-          }
+          className="absolute inset-0 z-10 cursor-pointer"
           onClick={onSelect}
-        >
-          {component.type === "MENU" && "Edit items"}
-        </button>
+        />
       )}
       <div className="absolute right-2 top-2 z-20 hidden items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-lg group-hover:flex group-focus-within:flex">
         <button
@@ -195,12 +188,9 @@ const textAreaClass =
 
 function ComponentSettings({
   component,
-  menuItems,
   onChange,
 }: {
   component?: LandingPageComponent;
-  menuItems: LandingPageBuilderData["menuItems"];
-  catalogItems: LandingPageBuilderData["catalogItems"];
   onChange: (component: LandingPageComponent) => void;
 }) {
   if (!component)
@@ -370,27 +360,6 @@ function ComponentSettings({
         </>
       )}
       {component.type === "MENU" && (
-        <Field label="Item display">
-          <Select
-            value={component.content.displayMode ?? "VERTICAL"}
-            onValueChange={(value) =>
-              replaceContent({ ...component.content, displayMode: value as LandingPageDisplayMode })
-            }
-          >
-            <SelectTrigger aria-label="Item display">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="VERTICAL">Vertical scrolling grid</SelectItem>
-              <SelectItem value="HORIZONTAL">Horizontal carousel</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="mt-2 text-xs text-stone-500">
-            Set a maximum height in Section settings to keep long lists inside the section.
-          </p>
-        </Field>
-      )}
-      {component.type === "MENU" && (
         <>
           <Field label="Heading">
             <Input
@@ -424,40 +393,10 @@ function ComponentSettings({
               </SelectContent>
             </Select>
           </Field>
-          <div>
-            <Label>Featured menu items</Label>
-            <div className="mt-2 max-h-52 space-y-2 overflow-y-auto rounded-xl border border-pink-100 p-2">
-              {menuItems.length ? (
-                menuItems.map((item) => {
-                  const checked = component.content.menuItemIds.includes(item._id);
-                  return (
-                    <label
-                      key={item._id}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg p-2 text-sm hover:bg-pink-50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          replaceContent({
-                            ...component.content,
-                            menuItemIds: checked
-                              ? component.content.menuItemIds.filter((id) => id !== item._id)
-                              : [...component.content.menuItemIds, item._id],
-                          })
-                        }
-                      />
-                      <span>{item.name}</span>
-                    </label>
-                  );
-                })
-              ) : (
-                <p className="p-2 text-sm text-stone-500">
-                  Add menu items from the Menu page first.
-                </p>
-              )}
-            </div>
-          </div>
+          <p className="text-sm text-stone-500">
+            All menu items set to show on the landing page appear automatically in horizontal
+            category rows. Manage visibility on the Menu page.
+          </p>
         </>
       )}
       {component.type === "CATALOG" && (
@@ -1332,7 +1271,7 @@ export function LandingPageBuilderPage() {
       section.components.some(
         (component) =>
           component.enabled &&
-          ((component.type === "MENU" && component.content.menuItemIds.length > 0) ||
+          ((component.type === "MENU" && (builder.data?.menuItems.length ?? 0) > 0) ||
             (component.type === "CATALOG" && (builder.data?.catalogItems.length ?? 0) > 0)),
       ),
   );
@@ -1781,12 +1720,7 @@ export function LandingPageBuilderPage() {
 
           <Card className="h-fit max-h-[calc(100vh-6rem)] overflow-y-auto p-4 xl:sticky xl:top-20">
             {selected ? (
-              <ComponentSettings
-                component={selected}
-                menuItems={builder.data.menuItems}
-                catalogItems={builder.data.catalogItems ?? []}
-                onChange={updateComponent}
-              />
+              <ComponentSettings component={selected} onChange={updateComponent} />
             ) : (
               <SectionSettings
                 section={selectedSection}

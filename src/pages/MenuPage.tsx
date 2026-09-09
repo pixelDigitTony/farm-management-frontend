@@ -86,6 +86,7 @@ export function MenuPage() {
       }),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ["menu-items"] });
+      client.invalidateQueries({ queryKey: ["landing-page-builder"] });
       client.invalidateQueries({ queryKey: ["recipes"] });
       setOpen(false);
       setEditing(undefined);
@@ -98,6 +99,7 @@ export function MenuPage() {
     mutationFn: (menu: MenuItem) => resources.remove("menu-items", menu._id),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: ["menu-items"] });
+      client.invalidateQueries({ queryKey: ["landing-page-builder"] });
       client.invalidateQueries({ queryKey: ["recipes"] });
       setDeleting(undefined);
       toast.success("Menu item deleted");
@@ -118,11 +120,13 @@ export function MenuPage() {
     const data = Object.fromEntries(new FormData(form));
     return {
       name: String(data.name),
+      category: String(data.category ?? "").trim(),
       servings: Number(data.servings),
       additionalCost: Number(data.additionalCost),
       sellingPrice: Number(data.sellingPrice),
       targetFoodCostPercent: Number(data.targetFoodCostPercent),
       isAvailable: data.isAvailable === "on",
+      showOnLandingPage: data.showOnLandingPage === "on",
     };
   }
   function calculate(event: React.FormEvent<HTMLFormElement>) {
@@ -181,6 +185,7 @@ export function MenuPage() {
       menu: {
         menuCode: code,
         name: formValues.name,
+        category: formValues.category,
         mediaUrls,
         googleDriveUrl: null,
         googleDriveUrls: [],
@@ -191,6 +196,7 @@ export function MenuPage() {
         calculatedFoodCostPercentCached: result.foodCostPercent,
         suggestedSellingPriceCached: result.suggestedPrice,
         isAvailable: formValues.isAvailable,
+        showOnLandingPage: formValues.showOnLandingPage,
       },
     });
   }
@@ -284,6 +290,11 @@ export function MenuPage() {
                       <Badge tone={menu.isAvailable ? "green" : "neutral"}>
                         {menu.isAvailable ? "AVAILABLE" : "PAUSED"}
                       </Badge>
+                      <p className="mt-1 text-xs text-stone-500">
+                        {menu.showOnLandingPage === false
+                          ? "Hidden on landing page"
+                          : "Shown on landing page"}
+                      </p>
                     </td>
                     <td className="px-5">
                       <div className="flex justify-end gap-1">
@@ -473,6 +484,13 @@ export function MenuPage() {
                 required
               />
             </Field>
+            <Field label="Category">
+              <Input
+                name="category"
+                defaultValue={editing?.category ?? ""}
+                placeholder="e.g. Main dishes, Snacks, Drinks"
+              />
+            </Field>
             <MenuMediaFields links={mediaLinks} onChange={setMediaLinks} />
             <label className="flex items-center gap-2 pt-6 text-sm">
               <input
@@ -482,6 +500,15 @@ export function MenuPage() {
                 className="size-4 accent-pink-700"
               />{" "}
               Available for orders
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                name="showOnLandingPage"
+                type="checkbox"
+                defaultChecked={editing?.showOnLandingPage !== false}
+                className="size-4 accent-pink-700"
+              />
+              Show on landing page
             </label>
             <Button
               type="submit"

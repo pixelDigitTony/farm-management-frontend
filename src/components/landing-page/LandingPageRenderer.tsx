@@ -3,7 +3,6 @@ import { useRef, useState } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
-import { formatPeso } from "@/lib/utils";
 import type {
   LandingCatalogItem,
   LandingMenuItem,
@@ -201,7 +200,6 @@ function MenuSection({
   theme,
   previewDevice,
   inSection,
-  catalogItems,
   onAddToCart,
 }: {
   component: Extract<LandingPageComponent, { type: "MENU" }>;
@@ -209,89 +207,33 @@ function MenuSection({
   theme: LandingPageTheme;
   previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
   inSection?: boolean;
-  catalogItems: LandingCatalogItem[];
   onAddToCart?: (item: LandingCatalogItem) => void;
 }) {
-  const selected = component.content.menuItemIds
-    .map((id) => menuItems.find((item) => item._id === id))
-    .filter((item): item is LandingMenuItem => Boolean(item));
+  const items: LandingCatalogItem[] = menuItems
+    .filter((item) => item.showOnLandingPage !== false)
+    .map((item) => ({
+      key: `MENU_ITEM:${item._id}`,
+      sourceType: "MENU_ITEM",
+      sourceId: item._id,
+      name: item.name,
+      description: "",
+      category: item.category || "Food",
+      productType: "FOOD",
+      mediaUrls: getMenuMediaUrls(item),
+      price: item.sellingPricePerServing ?? "0",
+      variants: [],
+      isFeatured: false,
+      isAvailable: item.isAvailable === true,
+    }));
   return (
-    <section id="menu" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
-      <div className="mx-auto max-w-6xl">
-        <h2 className="text-3xl font-bold">{component.content.heading}</h2>
-        {component.content.body && (
-          <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
-        )}
-        {selected.length ? (
-          <CatalogItemsLayout
-            heading={component.content.heading}
-            columns={component.content.columns}
-            displayMode={component.content.displayMode}
-            previewDevice={previewDevice}
-            count={selected.length}
-          >
-            {selected.map((item) => {
-              const media = getMenuMediaUrls(item)[0];
-              const catalogItem = catalogItems.find(
-                (candidate) =>
-                  candidate.sourceType === "MENU_ITEM" && candidate.sourceId === item._id,
-              );
-              return (
-                <article
-                  key={item._id}
-                  className="min-w-0 snap-start overflow-hidden border shadow-sm"
-                  style={{
-                    background: theme.surfaceColor,
-                    borderColor: `${theme.primaryColor}25`,
-                    borderRadius: "1.25rem",
-                  }}
-                >
-                  {media && (
-                    <div className="h-40 overflow-hidden">
-                      <Media url={media} title={item.name} />
-                    </div>
-                  )}
-                  <div className="p-5">
-                    {item.category && (
-                      <p
-                        className="text-xs font-bold uppercase tracking-widest"
-                        style={{ color: theme.primaryColor }}
-                      >
-                        {item.category.replaceAll("_", " ")}
-                      </p>
-                    )}
-                    <h3 className="mt-1 text-lg font-bold">{item.name}</h3>
-                    <p className="mt-3 font-bold" style={{ color: theme.primaryColor }}>
-                      {formatPeso(item.sellingPricePerServing ?? 0)}
-                    </p>
-                    {onAddToCart && catalogItem && (
-                      <button
-                        type="button"
-                        className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        style={{
-                          background: theme.primaryColor,
-                          color:
-                            component.buttonTextColor || contrastingButtonText(theme.primaryColor),
-                          borderRadius: radius(theme),
-                        }}
-                        disabled={!catalogItem.isAvailable}
-                        onClick={() => onAddToCart(catalogItem)}
-                      >
-                        {catalogItem.isAvailable ? "Add to cart" : "Unavailable"}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </CatalogItemsLayout>
-        ) : (
-          <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
-            Select menu items to feature here.
-          </div>
-        )}
-      </div>
-    </section>
+    <CatalogSection
+      component={component}
+      catalogItems={items}
+      theme={theme}
+      previewDevice={previewDevice}
+      inSection={inSection}
+      onAddToCart={onAddToCart}
+    />
   );
 }
 
@@ -303,7 +245,7 @@ function CatalogSection({
   inSection,
   onAddToCart,
 }: {
-  component: Extract<LandingPageComponent, { type: "CATALOG" }>;
+  component: Extract<LandingPageComponent, { type: "CATALOG" | "MENU" }>;
   catalogItems: LandingCatalogItem[];
   theme: LandingPageTheme;
   previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
@@ -323,7 +265,10 @@ function CatalogSection({
   const visibleGroups = [...groups].filter(([key]) => !activeCategory || key === activeCategory);
   const now = useCatalogPricingClock(catalogItems.map((item) => item.discount));
   return (
-    <section id="products" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
+    <section
+      id={component.type === "MENU" ? "menu" : "products"}
+      className={inSection ? "" : "px-6 py-12 sm:px-10"}
+    >
       <div className="mx-auto max-w-6xl">
         <h2 className="text-3xl font-bold">{component.content.heading}</h2>
         {component.content.body && (
@@ -331,7 +276,10 @@ function CatalogSection({
         )}
         {catalogItems.length ? (
           <>
-            <nav aria-label="Product categories" className="mt-6 flex gap-2 overflow-x-auto pb-3">
+            <nav
+              aria-label={component.type === "MENU" ? "Menu categories" : "Product categories"}
+              className="mt-6 flex gap-2 overflow-x-auto pb-3"
+            >
               {[
                 { key: null, name: "All" },
                 ...[...groups].map(([key, group]) => ({ key, name: group.name })),
@@ -442,7 +390,9 @@ function CatalogSection({
           </>
         ) : (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
-            No catalog items are available yet.
+            {component.type === "MENU"
+              ? "No menu items are available yet."
+              : "No catalog items are available yet."}
           </div>
         )}
       </div>
@@ -545,7 +495,6 @@ export function LandingPageComponentView({
         theme={theme}
         previewDevice={previewDevice}
         inSection={inSection}
-        catalogItems={catalogItems}
         onAddToCart={onAddToCart}
       />
     );

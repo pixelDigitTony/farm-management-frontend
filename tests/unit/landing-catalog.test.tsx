@@ -68,6 +68,41 @@ describe("landing catalog", () => {
     );
     expect(screen.getAllByRole("article")).toHaveLength(1);
   });
+  it("shows all visible menu-page items only, groups categories, and preserves menu cart identity", () => {
+    const component = createLandingComponent("MENU");
+    const menus = Array.from({ length: 15 }, (_, i) => ({
+      _id: `menu-${i}`,
+      name: `Dish ${i}`,
+      category: i < 8 ? "Meals" : "Drinks",
+      sellingPricePerServing: "50",
+      isAvailable: i !== 14,
+    }));
+    const onAddToCart = vi.fn();
+    render(
+      <LandingPageComponentView
+        component={component}
+        theme={theme}
+        menuItems={[...menus, { _id: "hidden", name: "Hidden dish", showOnLandingPage: false }]}
+        catalogItems={items}
+        onAddToCart={onAddToCart}
+      />,
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(15);
+    expect(screen.queryByText("Hidden dish")).not.toBeInTheDocument();
+    expect(screen.queryByText("Product 0")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Meals carousel" })).toHaveClass("overflow-x-auto");
+    fireEvent.click(screen.getByRole("button", { name: "Drinks" }));
+    expect(screen.getAllByRole("article")).toHaveLength(7);
+    expect(screen.getByRole("button", { name: "Unavailable" })).toBeDisabled();
+    const button = screen.getAllByRole("button", { name: "Add to cart" })[0];
+    if (!button) throw new Error("Missing menu cart button");
+    fireEvent.click(button);
+    expect(onAddToCart).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceType: "MENU_ITEM", sourceId: "menu-8", price: "50" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getAllByRole("article")).toHaveLength(15);
+  });
   it("uses readable CTA defaults and scopes overrides to one component", () => {
     const component = createLandingComponent("CTA");
     const { rerender } = render(

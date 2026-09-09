@@ -168,6 +168,7 @@ export type LandingMenuItem = {
   googleDriveUrls?: string[];
   sellingPricePerServing?: string;
   isAvailable?: boolean;
+  showOnLandingPage?: boolean;
 };
 
 export type LandingCatalogVariant = {
@@ -237,7 +238,7 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
         body: "",
         menuItemIds: [],
         columns: 3,
-        displayMode: "VERTICAL",
+        displayMode: "HORIZONTAL",
       },
     };
   if (type === "CATALOG")

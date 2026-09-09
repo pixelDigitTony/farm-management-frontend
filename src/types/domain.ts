@@ -71,6 +71,7 @@ export type MenuItem = {
   calculatedFoodCostPercentCached: Money;
   suggestedSellingPriceCached: Money;
   isAvailable: boolean;
+  showOnLandingPage?: boolean;
 };
 
 export type Recipe = {
