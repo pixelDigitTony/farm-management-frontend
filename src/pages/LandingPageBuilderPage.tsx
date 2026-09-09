@@ -103,19 +103,29 @@ function SortableComponent({
         opacity: isDragging ? 0.5 : undefined,
       }}
     >
-      <button
-        type="button"
-        aria-label={`Edit ${component.type.toLowerCase()} component`}
-        className={
-          component.type === "MENU" || component.type === "CATALOG"
-            ? "absolute left-2 top-2 z-20 rounded-lg bg-white px-3 py-1 text-xs font-semibold text-pink-700 shadow"
-            : "absolute inset-0 z-10 cursor-pointer"
-        }
-        onClick={onSelect}
-      >
-        {(component.type === "MENU" || component.type === "CATALOG") && "Edit items"}
-      </button>
+      {component.type !== "CATALOG" && (
+        <button
+          type="button"
+          aria-label={`Edit ${component.type.toLowerCase()} component`}
+          className={
+            component.type === "MENU"
+              ? "absolute left-2 top-2 z-20 rounded-lg bg-white px-3 py-1 text-xs font-semibold text-pink-700 shadow"
+              : "absolute inset-0 z-10 cursor-pointer"
+          }
+          onClick={onSelect}
+        >
+          {component.type === "MENU" && "Edit items"}
+        </button>
+      )}
       <div className="absolute right-2 top-2 z-20 hidden items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-lg group-hover:flex group-focus-within:flex">
+        <button
+          type="button"
+          aria-label={`Edit ${component.type.toLowerCase()} settings`}
+          className="rounded-lg p-2 hover:bg-pink-50"
+          onClick={onSelect}
+        >
+          <Icon icon="solar:pen-linear" />
+        </button>
         <button
           type="button"
           aria-label={`Move ${component.type}`}
@@ -186,7 +196,6 @@ const textAreaClass =
 function ComponentSettings({
   component,
   menuItems,
-  catalogItems,
   onChange,
 }: {
   component?: LandingPageComponent;
@@ -221,6 +230,26 @@ function ComponentSettings({
           className="size-7 text-pink-300"
         />
       </div>
+      {["HERO", "MENU", "CATALOG", "CTA"].includes(component.type) && (
+        <Field label="Button text color">
+          <Input
+            type="color"
+            aria-label="Button text color"
+            value={component.buttonTextColor || "#ffffff"}
+            onChange={(event) => onChange({ ...component, buttonTextColor: event.target.value })}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!component.buttonTextColor}
+            onClick={() => onChange({ ...component, buttonTextColor: "" })}
+          >
+            Use automatic contrast
+          </Button>
+          <p className="text-xs text-stone-500">Applies only to this component.</p>
+        </Field>
+      )}
       <Field label="Width">
         <Select
           value={component.width}
@@ -340,7 +369,7 @@ function ComponentSettings({
           </Field>
         </>
       )}
-      {(component.type === "MENU" || component.type === "CATALOG") && (
+      {component.type === "MENU" && (
         <Field label="Item display">
           <Select
             value={component.content.displayMode ?? "VERTICAL"}
@@ -469,56 +498,10 @@ function ComponentSettings({
               </SelectContent>
             </Select>
           </Field>
-          <div>
-            <Label>Featured catalog items</Label>
-            <div className="mt-2 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-pink-100 p-2">
-              {catalogItems.length ? (
-                catalogItems.map((item) => {
-                  const checked = component.content.catalogItemRefs.some(
-                    (reference) =>
-                      reference.sourceType === item.sourceType &&
-                      reference.sourceId === item.sourceId,
-                  );
-                  return (
-                    <label
-                      key={item.key}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg p-2 text-sm hover:bg-pink-50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          replaceContent({
-                            ...component.content,
-                            catalogItemRefs: checked
-                              ? component.content.catalogItemRefs.filter(
-                                  (reference) =>
-                                    !(
-                                      reference.sourceType === item.sourceType &&
-                                      reference.sourceId === item.sourceId
-                                    ),
-                                )
-                              : [
-                                  ...component.content.catalogItemRefs,
-                                  { sourceType: item.sourceType, sourceId: item.sourceId },
-                                ],
-                          })
-                        }
-                      />
-                      <span className="flex-1">{item.name}</span>
-                      <span className="text-[10px] font-bold uppercase text-stone-400">
-                        {item.productType.replaceAll("_", " ")}
-                      </span>
-                    </label>
-                  );
-                })
-              ) : (
-                <p className="p-2 text-sm text-stone-500">
-                  Add menu items or general products first.
-                </p>
-              )}
-            </div>
-          </div>
+          <p className="text-sm text-stone-500">
+            All active catalog items appear automatically, grouped into horizontal category rows.
+            Manage item visibility on the Product catalog page.
+          </p>
         </>
       )}
       {component.type === "GALLERY" && (
@@ -1350,7 +1333,7 @@ export function LandingPageBuilderPage() {
         (component) =>
           component.enabled &&
           ((component.type === "MENU" && component.content.menuItemIds.length > 0) ||
-            (component.type === "CATALOG" && component.content.catalogItemRefs.length > 0)),
+            (component.type === "CATALOG" && (builder.data?.catalogItems.length ?? 0) > 0)),
       ),
   );
 

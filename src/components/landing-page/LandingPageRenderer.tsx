@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
@@ -28,15 +28,31 @@ function radius(theme: LandingPageTheme) {
   return "0.85rem";
 }
 
+export function contrastingButtonText(background: string) {
+  const channels = background
+    .replace("#", "")
+    .match(/.{2}/g)
+    ?.map((value) => {
+      const channel = Number.parseInt(value, 16) / 255;
+      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+  if (channels?.length !== 3) return "#ffffff";
+  const luminance =
+    (channels[0] ?? 0) * 0.2126 + (channels[1] ?? 0) * 0.7152 + (channels[2] ?? 0) * 0.0722;
+  return luminance > 0.179 ? "#000000" : "#ffffff";
+}
+
 function ActionLink({
   href,
   children,
   secondary = false,
+  textColor,
   theme,
 }: {
   href: string;
   children: React.ReactNode;
   secondary?: boolean;
+  textColor?: string;
   theme: LandingPageTheme;
 }) {
   if (!href || !children) return null;
@@ -47,7 +63,8 @@ function ActionLink({
       style={{
         borderRadius: radius(theme),
         background: secondary ? "transparent" : theme.primaryColor,
-        color: secondary ? theme.textColor : "white",
+        color:
+          textColor || (secondary ? theme.textColor : contrastingButtonText(theme.primaryColor)),
         border: `1px solid ${secondary ? theme.textColor : theme.primaryColor}`,
       }}
     >
@@ -251,7 +268,12 @@ function MenuSection({
                       <button
                         type="button"
                         className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        style={{ background: theme.primaryColor, borderRadius: radius(theme) }}
+                        style={{
+                          background: theme.primaryColor,
+                          color:
+                            component.buttonTextColor || contrastingButtonText(theme.primaryColor),
+                          borderRadius: radius(theme),
+                        }}
                         disabled={!catalogItem.isAvailable}
                         onClick={() => onAddToCart(catalogItem)}
                       >
@@ -288,14 +310,18 @@ function CatalogSection({
   inSection?: boolean;
   onAddToCart?: (item: LandingCatalogItem) => void;
 }) {
-  const selected = component.content.catalogItemRefs
-    .map((reference) =>
-      catalogItems.find(
-        (item) => item.sourceType === reference.sourceType && item.sourceId === reference.sourceId,
-      ),
-    )
-    .filter((item): item is LandingCatalogItem => Boolean(item));
-  const now = useCatalogPricingClock(selected.map((item) => item.discount));
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const groups = new Map<string, { name: string; items: LandingCatalogItem[] }>();
+  for (const item of catalogItems) {
+    const name = item.category?.trim() || item.productType.replaceAll("_", " ");
+    const key = name.toLocaleLowerCase();
+    const group = groups.get(key) ?? { name, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  const activeCategory = selectedCategory && groups.has(selectedCategory) ? selectedCategory : null;
+  const visibleGroups = [...groups].filter(([key]) => !activeCategory || key === activeCategory);
+  const now = useCatalogPricingClock(catalogItems.map((item) => item.discount));
   return (
     <section id="products" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
       <div className="mx-auto max-w-6xl">
@@ -303,81 +329,120 @@ function CatalogSection({
         {component.content.body && (
           <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
         )}
-        {selected.length ? (
-          <CatalogItemsLayout
-            heading={component.content.heading}
-            columns={component.content.columns}
-            displayMode={component.content.displayMode}
-            previewDevice={previewDevice}
-            count={selected.length}
-          >
-            {selected.map((item) => (
-              <article
-                key={item.key}
-                className="min-w-0 snap-start overflow-hidden border shadow-sm"
-                style={{
-                  background: theme.surfaceColor,
-                  borderColor: `${theme.primaryColor}25`,
-                  borderRadius: "1.25rem",
-                }}
-              >
-                {item.mediaUrls[0] && (
-                  <div className="h-44 overflow-hidden">
-                    <Media url={item.mediaUrls[0]} title={item.name} />
-                  </div>
-                )}
-                <div className="p-5">
-                  <p
-                    className="text-xs font-bold uppercase tracking-widest"
-                    style={{ color: theme.primaryColor }}
-                  >
-                    {item.category || item.productType.replaceAll("_", " ")}
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold">{item.name}</h3>
-                  {item.description && (
-                    <p className="mt-2 line-clamp-2 text-sm opacity-65">{item.description}</p>
-                  )}
-                  <div className="mt-3" style={{ color: theme.primaryColor }}>
-                    <CatalogDiscountPrice
-                      liveCountdown
-                      now={now}
-                      from={item.variants.length > 0}
-                      pricing={
-                        item.variants.length
-                          ? {
-                              ...[...item.variants].sort(
-                                (left, right) =>
-                                  effectivePrice(left, now, item.discount) -
-                                  effectivePrice(right, now, item.discount),
-                              )[0],
-                              discount: item.discount,
-                            }
-                          : item
-                      }
-                    />
-                  </div>
-                  {onAddToCart && (
-                    <button
-                      type="button"
-                      className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      style={{ background: theme.primaryColor, borderRadius: radius(theme) }}
-                      disabled={!item.isAvailable}
-                      onClick={() => onAddToCart(item)}
+        {catalogItems.length ? (
+          <>
+            <nav aria-label="Product categories" className="mt-6 flex gap-2 overflow-x-auto pb-3">
+              {[
+                { key: null, name: "All" },
+                ...[...groups].map(([key, group]) => ({ key, name: group.name })),
+              ].map((category) => (
+                <button
+                  key={category.key ?? "all-categories"}
+                  type="button"
+                  aria-pressed={activeCategory === category.key}
+                  className="shrink-0 rounded-full border px-5 py-2 text-sm font-semibold"
+                  style={
+                    activeCategory === category.key
+                      ? {
+                          background: theme.primaryColor,
+                          color:
+                            component.buttonTextColor || contrastingButtonText(theme.primaryColor),
+                          borderColor: theme.primaryColor,
+                        }
+                      : { color: "inherit" }
+                  }
+                  onClick={() => setSelectedCategory(category.key)}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </nav>
+            {visibleGroups.map(([key, group]) => (
+              <section key={key} aria-label={group.name} className="mt-6 min-w-0">
+                <h3 className="text-xl font-bold">{group.name}</h3>
+                <CatalogItemsLayout
+                  heading={group.name}
+                  columns={component.content.columns}
+                  displayMode="HORIZONTAL"
+                  previewDevice={previewDevice}
+                  count={group.items.length}
+                >
+                  {group.items.map((item) => (
+                    <article
+                      key={item.key}
+                      className="min-w-0 snap-start overflow-hidden border shadow-sm"
+                      style={{
+                        background: theme.surfaceColor,
+                        borderColor: `${theme.primaryColor}25`,
+                        borderRadius: "1.25rem",
+                      }}
                     >
-                      {item.isAvailable
-                        ? item.variants.length
-                          ? "Choose options"
-                          : "Add to cart"
-                        : "Unavailable"}
-                    </button>
-                  )}
-                </div>
-              </article>
+                      {item.mediaUrls[0] && (
+                        <div className="h-44 overflow-hidden">
+                          <Media url={item.mediaUrls[0]} title={item.name} />
+                        </div>
+                      )}
+                      <div className="p-5">
+                        <p
+                          className="text-xs font-bold uppercase tracking-widest"
+                          style={{ color: theme.primaryColor }}
+                        >
+                          {item.category || item.productType.replaceAll("_", " ")}
+                        </p>
+                        <h3 className="mt-1 text-lg font-bold">{item.name}</h3>
+                        {item.description && (
+                          <p className="mt-2 line-clamp-2 text-sm opacity-65">{item.description}</p>
+                        )}
+                        <div className="mt-3" style={{ color: theme.primaryColor }}>
+                          <CatalogDiscountPrice
+                            liveCountdown
+                            now={now}
+                            from={item.variants.length > 0}
+                            pricing={
+                              item.variants.length
+                                ? {
+                                    ...[...item.variants].sort(
+                                      (left, right) =>
+                                        effectivePrice(left, now, item.discount) -
+                                        effectivePrice(right, now, item.discount),
+                                    )[0],
+                                    discount: item.discount,
+                                  }
+                                : item
+                            }
+                          />
+                        </div>
+                        {onAddToCart && (
+                          <button
+                            type="button"
+                            className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            style={{
+                              background: theme.primaryColor,
+                              color:
+                                component.buttonTextColor ||
+                                contrastingButtonText(theme.primaryColor),
+                              borderRadius: radius(theme),
+                            }}
+                            disabled={!item.isAvailable}
+                            onClick={() => onAddToCart(item)}
+                          >
+                            {item.isAvailable
+                              ? item.variants.length
+                                ? "Choose options"
+                                : "Add to cart"
+                              : "Unavailable"}
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </CatalogItemsLayout>
+              </section>
             ))}
-          </CatalogItemsLayout>
+          </>
         ) : (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
-            Select products to feature here.
+            No catalog items are available yet.
           </div>
         )}
       </div>
@@ -423,10 +488,19 @@ export function LandingPageComponentView({
             <p className="mt-5 text-lg leading-relaxed opacity-70">{component.content.body}</p>
           )}
           <div className="mt-7 flex flex-wrap gap-3">
-            <ActionLink href={component.content.primaryUrl} theme={theme}>
+            <ActionLink
+              textColor={component.buttonTextColor}
+              href={component.content.primaryUrl}
+              theme={theme}
+            >
               {component.content.primaryLabel}
             </ActionLink>
-            <ActionLink href={component.content.secondaryUrl} theme={theme} secondary>
+            <ActionLink
+              textColor={component.buttonTextColor}
+              href={component.content.secondaryUrl}
+              theme={theme}
+              secondary
+            >
               {component.content.secondaryLabel}
             </ActionLink>
           </div>
@@ -605,6 +679,7 @@ export function LandingPageComponentView({
         <p className="mx-auto mt-3 max-w-2xl opacity-85">{component.content.body}</p>
         <div className="mt-6">
           <ActionLink
+            textColor={component.buttonTextColor}
             href={component.content.buttonUrl}
             theme={{ ...theme, primaryColor: theme.surfaceColor, textColor: "white" }}
           >

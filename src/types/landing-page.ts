@@ -47,6 +47,7 @@ type BaseComponent<T extends LandingPageComponentType, C> = {
   type: T;
   enabled: boolean;
   width: LandingPageComponentWidth;
+  buttonTextColor?: string;
   content: C;
 };
 
@@ -248,7 +249,7 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
         body: "Order food, clothing, and other products from our business.",
         catalogItemRefs: [],
         columns: 3,
-        displayMode: "VERTICAL",
+        displayMode: "HORIZONTAL",
       },
     };
   if (type === "GALLERY")
