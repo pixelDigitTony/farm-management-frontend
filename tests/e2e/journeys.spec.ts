@@ -50,10 +50,12 @@ test("login methods expose labeled fields and accessible tab panels", async ({ p
     await expect(page.getByRole("tabpanel", { name, exact: true })).toBeVisible();
     if (name === "Phone + MPIN") await expect(page.getByLabel("6-digit MPIN")).toBeVisible();
     // Audit the settled form, after AnimatePresence has completed the method transition.
-    await expect(page.locator("#login-fields > div").first()).toHaveCSS("opacity", "1");
+    await expect(page.locator("#login-fields > form > div").first()).toHaveCSS("opacity", "1");
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
       .analyze();
     expect(results.violations).toEqual([]);
+    const roles = await new AxeBuilder({ page }).withRules(["aria-allowed-role"]).analyze();
+    expect(roles.violations).toEqual([]);
   }
 });

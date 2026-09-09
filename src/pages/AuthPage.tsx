@@ -111,123 +111,123 @@ export function AuthPage() {
           </TabsTrigger>
         </TabsList>
       </Tabs>
-      <form
+      <div
         id="login-fields"
         role="tabpanel"
         aria-labelledby={method === "EMAIL_PASSWORD" ? "login-email-tab" : "login-phone-tab"}
-        className="mt-6 space-y-4"
-        onSubmit={submit}
       >
-        <AnimatePresence mode="wait" initial={false}>
-          {method === "EMAIL_PASSWORD" ? (
+        <form className="mt-6 space-y-4" onSubmit={submit}>
+          <AnimatePresence mode="wait" initial={false}>
+            {method === "EMAIL_PASSWORD" ? (
+              <motion.div
+                key="email"
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                className="space-y-4"
+              >
+                <div>
+                  <Label htmlFor="login-email">Email address</Label>
+                  <Input
+                    id="login-email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    placeholder="owner@example.com"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="login-password">Password</Label>
+                  <Input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    placeholder="Your password"
+                  />
+                  <button
+                    type="button"
+                    className="mt-2 text-sm font-semibold text-pink-700 hover:underline"
+                    onClick={() => setRecoveryKind("PASSWORD")}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="phone"
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -8 }}
+                className="space-y-4"
+              >
+                <div>
+                  <Label htmlFor="login-phone">Philippine mobile number</Label>
+                  <Input
+                    id="login-phone"
+                    name="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    required
+                    placeholder="0917 123 4567"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="login-mpin">6-digit MPIN</Label>
+                  <Input
+                    id="login-mpin"
+                    name="mpin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    autoComplete="current-password"
+                    required
+                    placeholder="••••••"
+                    className="tracking-[.45em]"
+                  />
+                  <button
+                    type="button"
+                    className="mt-2 text-sm font-semibold text-pink-700 hover:underline"
+                    onClick={() => setRecoveryKind("MPIN")}
+                  >
+                    Forgot MPIN?
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {unverifiedEmail && (
             <motion.div
-              key="email"
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 8 }}
-              className="space-y-4"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              role="alert"
+              className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
             >
-              <div>
-                <Label htmlFor="login-email">Email address</Label>
-                <Input
-                  id="login-email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  placeholder="owner@example.com"
-                />
-              </div>
-              <div>
-                <Label htmlFor="login-password">Password</Label>
-                <Input
-                  id="login-password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  placeholder="Your password"
-                />
-                <button
-                  type="button"
-                  className="mt-2 text-sm font-semibold text-pink-700 hover:underline"
-                  onClick={() => setRecoveryKind("PASSWORD")}
-                >
-                  Forgot password?
-                </button>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="phone"
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              className="space-y-4"
-            >
-              <div>
-                <Label htmlFor="login-phone">Philippine mobile number</Label>
-                <Input
-                  id="login-phone"
-                  name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  required
-                  placeholder="0917 123 4567"
-                />
-              </div>
-              <div>
-                <Label htmlFor="login-mpin">6-digit MPIN</Label>
-                <Input
-                  id="login-mpin"
-                  name="mpin"
-                  type="password"
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  autoComplete="current-password"
-                  required
-                  placeholder="••••••"
-                  className="tracking-[.45em]"
-                />
-                <button
-                  type="button"
-                  className="mt-2 text-sm font-semibold text-pink-700 hover:underline"
-                  onClick={() => setRecoveryKind("MPIN")}
-                >
-                  Forgot MPIN?
-                </button>
+              <div className="flex gap-2">
+                <Icon icon="solar:letter-unread-linear" className="mt-0.5 size-5 shrink-0" />
+                <div>
+                  <p className="font-semibold">Email verification required</p>
+                  <button
+                    type="button"
+                    className="mt-1 font-semibold underline"
+                    onClick={resendVerification}
+                  >
+                    Resend verification email
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
-        </AnimatePresence>
-        {unverifiedEmail && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            role="alert"
-            className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-          >
-            <div className="flex gap-2">
-              <Icon icon="solar:letter-unread-linear" className="mt-0.5 size-5 shrink-0" />
-              <div>
-                <p className="font-semibold">Email verification required</p>
-                <button
-                  type="button"
-                  className="mt-1 font-semibold underline"
-                  onClick={resendVerification}
-                >
-                  Resend verification email
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-        <Button className="w-full" size="lg" disabled={loading}>
-          {loading ? "Signing in…" : "Sign in"}
-        </Button>
-      </form>
+          <Button className="w-full" size="lg" disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
+      </div>
       {/* <p className="mt-6 text-center text-sm text-stone-500">
         First time here?{" "}
         <Link className="font-semibold text-pink-700 hover:underline" to="/register">
