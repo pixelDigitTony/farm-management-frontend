@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { ComponentContentDialog } from "@/components/landing-page/ComponentContentDialog";
 import {
   componentChoices,
   FloatingComponentToolbar,
@@ -113,7 +114,7 @@ function SortableComponent({
       <div className="absolute right-2 top-2 z-20 hidden items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-lg group-hover:flex group-focus-within:flex">
         <button
           type="button"
-          aria-label={`Edit ${component.type.toLowerCase()} settings`}
+          aria-label={`Edit ${component.type.toLowerCase()} content`}
           className="rounded-lg p-2 hover:bg-pink-50"
           onClick={onSelect}
         >
@@ -189,9 +190,15 @@ const textAreaClass =
 function ComponentSettings({
   component,
   onChange,
+  onEditContent,
+  sections,
+  onAssignSection,
 }: {
   component?: LandingPageComponent;
   onChange: (component: LandingPageComponent) => void;
+  onEditContent: () => void;
+  sections: LandingPageSection[];
+  onAssignSection: (sectionId: string) => void;
 }) {
   if (!component)
     return (
@@ -220,6 +227,31 @@ function ComponentSettings({
           className="size-7 text-pink-300"
         />
       </div>
+      <Field label="Section">
+        <Select
+          value={
+            sections.find((section) => section.components.some((item) => item.id === component.id))
+              ?.id
+          }
+          onValueChange={onAssignSection}
+          disabled={sections.length < 2}
+        >
+          <SelectTrigger aria-label="Assign component to section">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {sections.map((section, index) => (
+              <SelectItem key={section.id} value={section.id}>
+                {index + 1}. {section.name}
+                {section.enabled ? "" : " (hidden)"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="mt-2 text-xs text-stone-500">
+          Choose a section to move this component to the end of that section.
+        </p>
+      </Field>
       {["HERO", "MENU", "CATALOG", "CTA"].includes(component.type) && (
         <Field label="Button text color">
           <Input
@@ -259,334 +291,61 @@ function ComponentSettings({
           </SelectContent>
         </Select>
       </Field>
-      {component.type === "HERO" && (
-        <>
-          <Field label="Eyebrow">
-            <Input
-              value={component.content.eyebrow}
-              onChange={(e) => replaceContent({ ...component.content, eyebrow: e.target.value })}
-            />
-          </Field>
-          <Field label="Headline">
-            <Input
-              value={component.content.title}
-              onChange={(e) => replaceContent({ ...component.content, title: e.target.value })}
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              className={textAreaClass}
-              value={component.content.body}
-              onChange={(e) => replaceContent({ ...component.content, body: e.target.value })}
-            />
-          </Field>
-          <Field label="Public media URL">
-            <Input
-              type="url"
-              value={component.content.mediaUrl}
-              onChange={(e) => replaceContent({ ...component.content, mediaUrl: e.target.value })}
-              placeholder="https://..."
-            />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Primary button">
-              <Input
-                value={component.content.primaryLabel}
-                onChange={(e) =>
-                  replaceContent({ ...component.content, primaryLabel: e.target.value })
-                }
-              />
-            </Field>
-            <Field label="Primary link">
-              <Input
-                value={component.content.primaryUrl}
-                onChange={(e) =>
-                  replaceContent({ ...component.content, primaryUrl: e.target.value })
-                }
-              />
-            </Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Secondary button">
-              <Input
-                value={component.content.secondaryLabel}
-                onChange={(e) =>
-                  replaceContent({ ...component.content, secondaryLabel: e.target.value })
-                }
-              />
-            </Field>
-            <Field label="Secondary link">
-              <Input
-                value={component.content.secondaryUrl}
-                onChange={(e) =>
-                  replaceContent({ ...component.content, secondaryUrl: e.target.value })
-                }
-              />
-            </Field>
-          </div>
-        </>
-      )}
+      <Button type="button" className="w-full" onClick={onEditContent}>
+        <Icon icon="solar:pen-linear" /> Edit content
+      </Button>
       {component.type === "TEXT" && (
-        <>
-          <Field label="Heading">
-            <Input
-              value={component.content.heading}
-              onChange={(e) => replaceContent({ ...component.content, heading: e.target.value })}
-            />
-          </Field>
-          <Field label="Body">
-            <textarea
-              className={textAreaClass}
-              value={component.content.body}
-              onChange={(e) => replaceContent({ ...component.content, body: e.target.value })}
-            />
-          </Field>
-          <Field label="Alignment">
-            <Select
-              value={component.content.alignment}
-              onValueChange={(value) =>
-                replaceContent({ ...component.content, alignment: value as "LEFT" | "CENTER" })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="LEFT">Left</SelectItem>
-                <SelectItem value="CENTER">Center</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-        </>
+        <Field label="Alignment">
+          <Select
+            value={component.content.alignment}
+            onValueChange={(value) =>
+              replaceContent({ ...component.content, alignment: value as "LEFT" | "CENTER" })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="LEFT">Left</SelectItem>
+              <SelectItem value="CENTER">Center</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+      {(component.type === "MENU" ||
+        component.type === "CATALOG" ||
+        component.type === "GALLERY") && (
+        <Field label="Columns">
+          <Select
+            value={String(component.content.columns)}
+            onValueChange={(value) =>
+              replaceContent({ ...component.content, columns: Number(value) as 2 | 3 | 4 })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[2, 3, 4].map((value) => (
+                <SelectItem key={value} value={String(value)}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
       )}
       {component.type === "MENU" && (
-        <>
-          <Field label="Heading">
-            <Input
-              value={component.content.heading}
-              onChange={(e) => replaceContent({ ...component.content, heading: e.target.value })}
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              className={textAreaClass}
-              value={component.content.body}
-              onChange={(e) => replaceContent({ ...component.content, body: e.target.value })}
-            />
-          </Field>
-          <Field label="Columns">
-            <Select
-              value={String(component.content.columns)}
-              onValueChange={(value) =>
-                replaceContent({ ...component.content, columns: Number(value) as 2 | 3 | 4 })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[2, 3, 4].map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <p className="text-sm text-stone-500">
-            All menu items set to show on the landing page appear automatically in horizontal
-            category rows. Manage visibility on the Menu page.
-          </p>
-        </>
+        <p className="text-sm text-stone-500">
+          All menu items set to show on the landing page appear automatically in horizontal category
+          rows. Manage visibility on the Menu page.
+        </p>
       )}
       {component.type === "CATALOG" && (
-        <>
-          <Field label="Heading">
-            <Input
-              value={component.content.heading}
-              onChange={(event) =>
-                replaceContent({ ...component.content, heading: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              className={textAreaClass}
-              value={component.content.body}
-              onChange={(event) =>
-                replaceContent({ ...component.content, body: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Columns">
-            <Select
-              value={String(component.content.columns)}
-              onValueChange={(value) =>
-                replaceContent({ ...component.content, columns: Number(value) as 2 | 3 | 4 })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[2, 3, 4].map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <p className="text-sm text-stone-500">
-            All active catalog items appear automatically, grouped into horizontal category rows.
-            Manage item visibility on the Product catalog page.
-          </p>
-        </>
-      )}
-      {component.type === "GALLERY" && (
-        <>
-          <Field label="Heading">
-            <Input
-              value={component.content.heading}
-              onChange={(e) => replaceContent({ ...component.content, heading: e.target.value })}
-            />
-          </Field>
-          <Field label="Media URLs (one per line)">
-            <textarea
-              className={textAreaClass}
-              value={component.content.mediaUrls.join("\n")}
-              onChange={(e) =>
-                replaceContent({
-                  ...component.content,
-                  mediaUrls: e.target.value
-                    .split("\n")
-                    .map((value) => value.trim())
-                    .filter(Boolean),
-                })
-              }
-              placeholder="https://..."
-            />
-          </Field>
-          <Field label="Columns">
-            <Select
-              value={String(component.content.columns)}
-              onValueChange={(value) =>
-                replaceContent({ ...component.content, columns: Number(value) as 2 | 3 | 4 })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[2, 3, 4].map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </>
-      )}
-      {component.type === "CONTACT" && (
-        <>
-          <Field label="Heading">
-            <Input
-              value={component.content.heading}
-              onChange={(e) => replaceContent({ ...component.content, heading: e.target.value })}
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              className={textAreaClass}
-              value={component.content.body}
-              onChange={(e) => replaceContent({ ...component.content, body: e.target.value })}
-            />
-          </Field>
-          <Field label="Address">
-            <Input
-              value={component.content.address}
-              onChange={(e) => replaceContent({ ...component.content, address: e.target.value })}
-            />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Phone">
-              <Input
-                value={component.content.phone}
-                onChange={(e) => replaceContent({ ...component.content, phone: e.target.value })}
-              />
-            </Field>
-            <Field label="Email">
-              <Input
-                value={component.content.email}
-                onChange={(e) => replaceContent({ ...component.content, email: e.target.value })}
-              />
-            </Field>
-          </div>
-          <Field label="Business hours">
-            <textarea
-              className={textAreaClass}
-              value={component.content.hours}
-              onChange={(e) => replaceContent({ ...component.content, hours: e.target.value })}
-            />
-          </Field>
-          <Field label="Facebook URL">
-            <Input
-              type="url"
-              value={component.content.facebookUrl}
-              onChange={(e) =>
-                replaceContent({ ...component.content, facebookUrl: e.target.value })
-              }
-            />
-          </Field>
-          <Field label="Instagram URL">
-            <Input
-              type="url"
-              value={component.content.instagramUrl}
-              onChange={(e) =>
-                replaceContent({ ...component.content, instagramUrl: e.target.value })
-              }
-            />
-          </Field>
-          <Field label="Map URL">
-            <Input
-              type="url"
-              value={component.content.mapUrl}
-              onChange={(e) => replaceContent({ ...component.content, mapUrl: e.target.value })}
-            />
-          </Field>
-        </>
-      )}
-      {component.type === "CTA" && (
-        <>
-          <Field label="Heading">
-            <Input
-              value={component.content.heading}
-              onChange={(e) => replaceContent({ ...component.content, heading: e.target.value })}
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              className={textAreaClass}
-              value={component.content.body}
-              onChange={(e) => replaceContent({ ...component.content, body: e.target.value })}
-            />
-          </Field>
-          <Field label="Button label">
-            <Input
-              value={component.content.buttonLabel}
-              onChange={(e) =>
-                replaceContent({ ...component.content, buttonLabel: e.target.value })
-              }
-            />
-          </Field>
-          <Field label="Button link">
-            <Input
-              value={component.content.buttonUrl}
-              onChange={(e) => replaceContent({ ...component.content, buttonUrl: e.target.value })}
-            />
-          </Field>
-        </>
+        <p className="text-sm text-stone-500">
+          All active catalog items appear automatically, grouped into horizontal category rows.
+          Manage item visibility on the Product catalog page.
+        </p>
       )}
     </div>
   );
@@ -914,6 +673,7 @@ export function LandingPageBuilderPage() {
   const [draft, setDraft] = useState<LandingPageVariant>();
   const [selectedSectionId, setSelectedSectionId] = useState<string>();
   const [selectedComponentId, setSelectedComponentId] = useState<string>();
+  const [contentEditor, setContentEditor] = useState<LandingPageComponent>();
   const [device, setDevice] = useState<"DESKTOP" | "TABLET" | "MOBILE">("DESKTOP");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commerceSettingsOpen, setCommerceSettingsOpen] = useState(false);
@@ -996,6 +756,30 @@ export function LandingPageBuilderPage() {
         components: section.components.map((item) => (item.id === component.id ? component : item)),
       })),
     });
+  }
+  function assignComponentToSection(componentId: string, sectionId: string) {
+    if (!draft) return;
+    const source = draft.sections.find((section) =>
+      section.components.some((item) => item.id === componentId),
+    );
+    const target = draft.sections.find((section) => section.id === sectionId);
+    const component = source?.components.find((item) => item.id === componentId);
+    if (!source || !target || !component || source.id === target.id) return;
+    commit({
+      ...draft,
+      sections: draft.sections.map((section) => {
+        if (section.id === source.id)
+          return {
+            ...section,
+            components: section.components.filter((item) => item.id !== componentId),
+          };
+        if (section.id === target.id)
+          return { ...section, components: [...section.components, component] };
+        return section;
+      }),
+    });
+    setSelectedSectionId(target.id);
+    setSelectedComponentId(componentId);
   }
   function updateSection(section: LandingPageSection) {
     if (!draft) return;
@@ -1603,6 +1387,9 @@ export function LandingPageBuilderPage() {
                       onSelectComponent={(componentId) => {
                         setSelectedSectionId(section.id);
                         setSelectedComponentId(componentId);
+                        setContentEditor(
+                          section.components.find((component) => component.id === componentId),
+                        );
                       }}
                       onUpdateComponent={updateComponent}
                       onDuplicateComponent={(component) => {
@@ -1720,7 +1507,13 @@ export function LandingPageBuilderPage() {
 
           <Card className="h-fit max-h-[calc(100vh-6rem)] overflow-y-auto p-4 xl:sticky xl:top-20">
             {selected ? (
-              <ComponentSettings component={selected} onChange={updateComponent} />
+              <ComponentSettings
+                component={selected}
+                sections={draft.sections}
+                onAssignSection={(sectionId) => assignComponentToSection(selected.id, sectionId)}
+                onChange={updateComponent}
+                onEditContent={() => setContentEditor(selected)}
+              />
             ) : (
               <SectionSettings
                 section={selectedSection}
@@ -1761,6 +1554,20 @@ export function LandingPageBuilderPage() {
         document.body,
       )}
 
+      {contentEditor && (
+        <ComponentContentDialog
+          key={contentEditor.id}
+          initialComponent={contentEditor}
+          onClose={() => setContentEditor(undefined)}
+          onApply={(edited) => {
+            const current = draft.sections
+              .flatMap((section) => section.components)
+              .find((component) => component.id === edited.id);
+            if (current)
+              updateComponent({ ...current, content: edited.content } as LandingPageComponent);
+          }}
+        />
+      )}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
           <DialogTitle>Landing-page settings</DialogTitle>

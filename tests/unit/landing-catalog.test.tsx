@@ -103,6 +103,38 @@ describe("landing catalog", () => {
     fireEvent.click(screen.getByRole("button", { name: "All" }));
     expect(screen.getAllByRole("article")).toHaveLength(15);
   });
+  it.each(["MENU", "CATALOG"] as const)(
+    "searches %s items with category filters and restores results when cleared",
+    (type) => {
+      render(
+        <LandingPageComponentView
+          component={createLandingComponent(type)}
+          theme={theme}
+          menuItems={items.map((item) => ({
+            _id: item.sourceId,
+            name: item.name,
+            category: item.category,
+          }))}
+          catalogItems={items}
+        />,
+      );
+      const search = screen.getByRole("searchbox", {
+        name: type === "MENU" ? "Search menu items" : "Search products",
+      });
+      fireEvent.change(search, { target: { value: "  PRODUCT 1  " } });
+      expect(screen.getAllByRole("article")).toHaveLength(1);
+      expect(screen.getByRole("heading", { name: "Product 1" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Food" }));
+      expect(screen.queryAllByRole("article")).toHaveLength(0);
+      expect(screen.getByRole("status")).toHaveTextContent("No matching items in this category");
+      fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+      expect(screen.getAllByRole("article")).toHaveLength(1);
+      fireEvent.click(screen.getByRole("button", { name: "All" }));
+      expect(screen.getAllByRole("article")).toHaveLength(3);
+      fireEvent.change(search, { target: { value: "CLOTHING" } });
+      expect(screen.getAllByRole("article")).toHaveLength(2);
+    },
+  );
   it("uses readable CTA defaults and scopes overrides to one component", () => {
     const component = createLandingComponent("CTA");
     const { rerender } = render(

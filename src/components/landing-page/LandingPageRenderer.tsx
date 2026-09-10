@@ -253,6 +253,9 @@ function CatalogSection({
   onAddToCart?: (item: LandingCatalogItem) => void;
 }) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const searchTerm = search.trim().toLocaleLowerCase();
+  const searchLabel = component.type === "MENU" ? "Search menu items" : "Search products";
   const groups = new Map<string, { name: string; items: LandingCatalogItem[] }>();
   for (const item of catalogItems) {
     const name = item.category?.trim() || item.productType.replaceAll("_", " ");
@@ -262,7 +265,29 @@ function CatalogSection({
     groups.set(key, group);
   }
   const activeCategory = selectedCategory && groups.has(selectedCategory) ? selectedCategory : null;
-  const visibleGroups = [...groups].filter(([key]) => !activeCategory || key === activeCategory);
+  const visibleGroups = [...groups]
+    .filter(([key]) => !activeCategory || key === activeCategory)
+    .map(
+      ([key, group]) =>
+        [
+          key,
+          {
+            ...group,
+            items: group.items.filter((item) =>
+              [
+                item.name,
+                item.description,
+                group.name,
+                ...item.variants.map((variant) => variant.name),
+              ]
+                .join(" ")
+                .toLocaleLowerCase()
+                .includes(searchTerm),
+            ),
+          },
+        ] as const,
+    )
+    .filter(([, group]) => group.items.length > 0);
   const now = useCatalogPricingClock(catalogItems.map((item) => item.discount));
   return (
     <section
@@ -274,6 +299,32 @@ function CatalogSection({
         {component.content.body && (
           <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
         )}
+        <div className="mt-6 flex min-w-0 items-end gap-2">
+          <label className="block min-w-0 flex-1">
+            <span className="mb-2 block text-sm font-semibold">{searchLabel}</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={
+                component.type === "MENU"
+                  ? "Search dishes or categories…"
+                  : "Search products or categories…"
+              }
+              className="w-full min-w-0 rounded-xl border px-4 py-3 text-sm outline-offset-2"
+              style={{ background: theme.surfaceColor, color: theme.textColor }}
+            />
+          </label>
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="shrink-0 rounded-xl border px-3 py-3 text-sm font-semibold"
+            >
+              Clear search
+            </button>
+          )}
+        </div>
         {catalogItems.length ? (
           <>
             <nav
@@ -305,6 +356,15 @@ function CatalogSection({
                 </button>
               ))}
             </nav>
+            {!visibleGroups.length && (
+              <p
+                role="status"
+                className="mt-6 rounded-xl border border-dashed p-6 text-center text-sm"
+              >
+                No matching items{activeCategory ? " in this category" : ""}. Try another search
+                {activeCategory ? " or choose All" : ""}.
+              </p>
+            )}
             {visibleGroups.map(([key, group]) => (
               <section key={key} aria-label={group.name} className="mt-6 min-w-0">
                 <h3 className="text-xl font-bold">{group.name}</h3>
