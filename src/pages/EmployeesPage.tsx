@@ -225,13 +225,13 @@ export function EmployeesPage() {
                   });
                 }}
               >
-                <Field label="Numeric level (0–98)">
+                <Field label="Numeric level (0–97)">
                   <Input
                     aria-label="Numeric level"
                     name="level"
                     type="number"
                     min="0"
-                    max="98"
+                    max="97"
                     required
                   />
                 </Field>
@@ -247,7 +247,8 @@ export function EmployeesPage() {
                 </Field>
                 <p className="text-sm text-stone-500">
                   New lower roles start with no module access. Configure Permissions after creating
-                  the role. The highest role always has full access.
+                  the role. The owner moves above new roles automatically; 98 is reserved for the
+                  owner and 99 for Super Admin.
                 </p>
                 <Button disabled={mutate.isPending}>Create role</Button>
               </form>
@@ -256,8 +257,9 @@ export function EmployeesPage() {
           <Card className="overflow-x-auto p-5">
             <h2 className="font-display text-xl font-semibold">Business roles</h2>
             <p className="mt-1 text-sm text-stone-500">
-              Edit role names here. Numeric levels stay fixed. Use Permissions to control module
-              access. Reassign accounts and registration links before deleting a role.
+              Edit role names here. Role level changes also update assigned accounts and
+              registration links. Use Permissions to control module access. Reassign accounts and
+              registration links before deleting a role.
             </p>
             <table className="mt-4 w-full min-w-[560px] text-left text-sm">
               <thead className="border-b text-xs uppercase text-stone-400">
@@ -273,6 +275,14 @@ export function EmployeesPage() {
                     key={`${role.level}-${role.name}-${JSON.stringify(role.permissions)}`}
                     role={role}
                     highest={role.level === data.business.ownerRole}
+                    ownerMinimum={
+                      Math.max(
+                        -1,
+                        ...roleOptions
+                          .filter((item) => item.level !== data.business.ownerRole)
+                          .map((item) => item.level),
+                      ) + 1
+                    }
                     inUse={
                       data.users.some((user) => user.role === role.level) ||
                       data.invites.some((invite) => invite.role === role.level)
@@ -390,6 +400,7 @@ function InviteCard({
 }
 
 function RoleRow({
+  ownerMinimum,
   role,
   highest,
   inUse,
@@ -397,6 +408,7 @@ function RoleRow({
   onMutate,
 }: {
   role: Role;
+  ownerMinimum: number;
   highest: boolean;
   inUse: boolean;
   pending: boolean;
@@ -405,10 +417,36 @@ function RoleRow({
   const [editing, setEditing] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [name, setName] = useState(role.name);
+  const [level, setLevel] = useState(String(role.level));
+  const validLevel =
+    Number.isInteger(Number(level)) &&
+    level !== "" &&
+    (highest
+      ? Number(level) === role.level || Number(level) === ownerMinimum
+      : Number(level) >= 0 && Number(level) <= 97);
   return (
     <tr>
       <td className="py-4">
-        {role.level}
+        {editing ? (
+          <>
+            <Input
+              aria-label={`Numeric level for ${role.name}`}
+              className="w-24"
+              type="number"
+              min={highest ? ownerMinimum : 0}
+              max={highest ? ownerMinimum : 97}
+              value={level}
+              onChange={(event) => setLevel(event.target.value)}
+            />
+            {highest && (
+              <p className="mt-1 max-w-40 text-xs text-stone-500">
+                To change the owner level, use {ownerMinimum}, one above the next highest role.
+              </p>
+            )}
+          </>
+        ) : (
+          role.level
+        )}
         {highest && <span className="ml-2 text-xs text-stone-500">Highest</span>}
       </td>
       <td className="py-4 pr-4">
@@ -446,13 +484,16 @@ function RoleRow({
             <>
               <Button
                 size="sm"
-                disabled={pending || name.trim().length < 2}
+                disabled={pending || name.trim().length < 2 || !validLevel}
                 onClick={async () => {
                   try {
                     await onMutate({
                       path: `/roles/${role.level}`,
                       method: "PATCH",
-                      payload: { name: name.trim() },
+                      payload: {
+                        name: name.trim(),
+                        ...(Number(level) !== role.level ? { level: Number(level) } : {}),
+                      },
                     });
                     setEditing(false);
                   } catch {
@@ -468,6 +509,7 @@ function RoleRow({
                 disabled={pending}
                 onClick={() => {
                   setName(role.name);
+                  setLevel(String(role.level));
                   setEditing(false);
                 }}
               >

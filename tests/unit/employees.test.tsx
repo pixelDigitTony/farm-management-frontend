@@ -146,3 +146,40 @@ it("discards unsaved permission changes on Cancel", async () => {
   await user.click(permissionsButton);
   expect(screen.getByRole("checkbox", { name: "Product Catalog: view" })).not.toBeChecked();
 });
+
+it("edits a role level and caps new roles at 97", async () => {
+  const user = userEvent.setup();
+  mount();
+  await user.click(await screen.findByRole("tab", { name: "Roles" }));
+  expect(screen.getByRole("spinbutton", { name: "Numeric level" })).toHaveAttribute("max", "97");
+  const row = within(screen.getByRole("row", { name: /1 Staff/ }));
+  await user.click(row.getByRole("button", { name: "Edit" }));
+  fireEvent.change(row.getByRole("spinbutton"), { target: { value: "7" } });
+  await user.click(row.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith("/employees/roles/1", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Staff", level: 7 }),
+    }),
+  );
+});
+it("limits an owner level change to one above the next highest role", async () => {
+  const user = userEvent.setup();
+  mount();
+  await user.click(await screen.findByRole("tab", { name: "Roles" }));
+  const row = within(screen.getByRole("row", { name: /Highest.*Owner/ }));
+  await user.click(row.getByRole("button", { name: "Edit" }));
+  const level = row.getByRole("spinbutton");
+  expect(level).toHaveAttribute("min", "2");
+  expect(level).toHaveAttribute("max", "2");
+  fireEvent.change(level, { target: { value: "3" } });
+  expect(row.getByRole("button", { name: "Save" })).toBeDisabled();
+  fireEvent.change(level, { target: { value: "2" } });
+  await user.click(row.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith("/employees/roles/5", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Owner", level: 2 }),
+    }),
+  );
+});
