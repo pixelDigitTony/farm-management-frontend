@@ -198,6 +198,7 @@ export function OrdersPage() {
                 Cancel order
               </Button>
               <Button
+                permission={{ path: "/orders/id/status", method: "PATCH" }}
                 disabled={update.isPending}
                 onClick={() =>
                   update.mutate({
@@ -235,6 +236,7 @@ export function OrdersPage() {
               Keep order
             </Button>
             <Button
+              permission={{ path: "/orders/id/status", method: "PATCH" }}
               disabled={!cancelReason.trim() || update.isPending}
               onClick={() =>
                 cancelling &&

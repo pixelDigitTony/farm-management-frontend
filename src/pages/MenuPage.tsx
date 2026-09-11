@@ -237,7 +237,10 @@ export function MenuPage() {
         title="Menu"
         description="Manage menu pricing and recipes using live ingredient costs from inventory."
       >
-        <Button onClick={startCreate}>
+        <Button
+          permission={{ path: "/operations/menu-recipes", method: "POST" }}
+          onClick={startCreate}
+        >
           <Icon icon="solar:add-circle-linear" /> Add menu item
         </Button>
       </Header>
@@ -301,7 +304,12 @@ export function MenuPage() {
                         <Button variant="ghost" size="sm" onClick={() => setViewing(menu)}>
                           <Icon icon="solar:eye-linear" /> View
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => startEdit(menu)}>
+                        <Button
+                          permission={{ path: "/operations/menu-recipes", method: "PUT" }}
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => startEdit(menu)}
+                        >
                           <Icon icon="solar:pen-linear" /> Edit
                         </Button>
                         <Button
@@ -330,7 +338,11 @@ export function MenuPage() {
                 <p className="mt-1 text-sm text-stone-500">
                   Create your first recipe and selling price.
                 </p>
-                <Button className="mt-4" onClick={startCreate}>
+                <Button
+                  permission={{ path: "/operations/menu-recipes", method: "POST" }}
+                  className="mt-4"
+                  onClick={startCreate}
+                >
                   Add menu item
                 </Button>
               </div>

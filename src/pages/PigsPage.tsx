@@ -160,7 +160,10 @@ export function PigsPage() {
           }}
         >
           <DialogTrigger asChild>
-            <Button onClick={() => setEditing(undefined)}>
+            <Button
+              permission={{ path: "/operations/pig-acquisitions", method: "POST" }}
+              onClick={() => setEditing(undefined)}
+            >
               <Icon icon="solar:add-circle-linear" />
               Add pig
             </Button>
@@ -260,7 +263,14 @@ export function PigsPage() {
                   updates the linked purchase expense and accumulated cost.
                 </p>
               )}
-              <Button className="sm:col-span-2" disabled={savePig.isPending}>
+              <Button
+                permission={{
+                  path: "/operations/pig-acquisitions",
+                  method: editing ? "PATCH" : "POST",
+                }}
+                className="sm:col-span-2"
+                disabled={savePig.isPending}
+              >
                 {editing ? "Update pig" : "Save pig"}
               </Button>
             </form>
@@ -298,6 +308,7 @@ export function PigsPage() {
             </div>
             <div className="flex gap-2 border-t border-pink-100 p-3">
               <Button
+                permission={{ path: "/operations/pig-acquisitions", method: "PATCH" }}
                 variant="outline"
                 size="sm"
                 className="flex-1"
@@ -309,6 +320,7 @@ export function PigsPage() {
                 <Icon icon="solar:pen-linear" /> Edit
               </Button>
               <Button
+                permission={{ path: "/operations/pig-acquisitions", method: "DELETE" }}
                 variant="ghost"
                 size="sm"
                 className="text-red-600 hover:bg-red-50"

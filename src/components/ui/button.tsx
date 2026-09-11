@@ -1,6 +1,8 @@
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
+import { sessionUserStore } from "@/api/client";
+import { allowsRequest } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -30,8 +32,28 @@ export function Button({
   variant,
   size,
   asChild = false,
+  permission,
   ...props
-}: React.ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean }) {
+}: React.ComponentProps<"button"> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean;
+    permission?: { path: string; method?: string };
+  }) {
+  const user = sessionUserStore.get();
+  const denied = Boolean(
+    permission &&
+      user &&
+      !user.isHighestRole &&
+      user.role !== 99 &&
+      !allowsRequest(user.permissions ?? [], permission.path, permission.method),
+  );
   const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+  return (
+    <Comp
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+      disabled={props.disabled || denied}
+      title={denied ? "Your role does not have permission for this action" : props.title}
+    />
+  );
 }

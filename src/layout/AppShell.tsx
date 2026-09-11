@@ -6,6 +6,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api, sessionUserStore, tokenStore } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { canAccess, moduleForPage } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const navGroups = [
@@ -81,19 +82,16 @@ export function AppShell() {
   const pendingOrders = useQuery({
     queryKey: ["customer-orders", "sidebar-pending"],
     queryFn: () => api<{ pendingCount: number }>("/orders?status=PENDING"),
-    enabled: Boolean(user?.isHighestRole),
+    enabled: canAccess(user, "orders"),
     refetchInterval: 30_000,
   });
-  const visibleNavGroups = navGroups.map((group) => ({
-    ...group,
-    items: group.items.filter(
-      (item) =>
-        !("access" in item) ||
-        item.access === undefined ||
-        (item.access === "highest" && user?.isHighestRole) ||
-        (item.access === "super" && user?.role === 99),
-    ),
-  }));
+  const visibleNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canAccess(user, moduleForPage(item.to))),
+    }))
+    .filter((group) => group.items.length > 0);
+
   const nav = visibleNavGroups.flatMap((group) => group.items);
   const current = nav.find((item) => item.to === location.pathname)?.label ?? "Miss V Business";
   const sidebar = (
@@ -232,7 +230,30 @@ export function AppShell() {
               exit={{ opacity: 0, y: -5 }}
               transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             >
-              <Outlet />
+              {canAccess(user, moduleForPage(location.pathname)) ? (
+                <>
+                  {!user?.isHighestRole && (
+                    <p className="mb-4 text-sm text-stone-500">
+                      Your role can:{" "}
+                      {(["view", "create", "edit", "delete"] as const)
+                        .filter((action) =>
+                          canAccess(user, moduleForPage(location.pathname), action),
+                        )
+                        .join(", ")}{" "}
+                      in this module.
+                    </p>
+                  )}
+                  <Outlet />
+                </>
+              ) : (
+                <div role="alert" className="rounded-2xl border bg-white p-6">
+                  <h2 className="text-lg font-semibold">Access restricted</h2>
+                  <p className="mt-2 text-sm text-stone-500">
+                    Your role does not have access to this page. Choose an available module from
+                    navigation or contact your business administrator.
+                  </p>
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>

@@ -225,7 +225,7 @@ export function CatalogPage() {
         title="Product Catalog"
         description="Create clothing, farm products, merchandise, and other items that can be featured and ordered from your landing page. Food remains managed in Menu."
       >
-        <Button onClick={startCreate}>
+        <Button permission={{ path: "/catalog/products", method: "POST" }} onClick={startCreate}>
           <Icon icon="solar:add-circle-linear" /> Add product
         </Button>
       </Header>
@@ -374,11 +374,21 @@ export function CatalogPage() {
                           </p>
                         </div>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => startEdit(product)}>
+                          <Button
+                            permission={{ path: "/catalog/products", method: "PUT" }}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => startEdit(product)}
+                          >
                             Edit
                           </Button>
                           {product.isActive && (
-                            <Button variant="ghost" size="sm" onClick={() => setArchiving(product)}>
+                            <Button
+                              permission={{ path: "/catalog/products", method: "DELETE" }}
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setArchiving(product)}
+                            >
                               Archive
                             </Button>
                           )}
@@ -398,7 +408,11 @@ export function CatalogPage() {
           <p className="mt-2 text-sm text-stone-500">
             Add clothing or merchandise here, then feature it through the landing-page builder.
           </p>
-          <Button className="mt-5" onClick={startCreate}>
+          <Button
+            permission={{ path: "/catalog/products", method: "POST" }}
+            className="mt-5"
+            onClick={startCreate}
+          >
             Add your first product
           </Button>
         </Card>
@@ -628,7 +642,11 @@ export function CatalogPage() {
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={save.isPending}>
+              <Button
+                permission={{ path: "/catalog/products", method: editing ? "PUT" : "POST" }}
+                type="submit"
+                disabled={save.isPending}
+              >
                 {save.isPending ? "Saving..." : "Save product"}
               </Button>
             </div>
@@ -648,6 +666,7 @@ export function CatalogPage() {
               Keep product
             </Button>
             <Button
+              permission={{ path: "/catalog/products", method: "DELETE" }}
               disabled={archive.isPending}
               onClick={() => archiving && archive.mutate(archiving)}
             >

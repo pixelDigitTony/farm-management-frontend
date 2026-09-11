@@ -348,13 +348,24 @@ export function KarenderiyaPage() {
         description="Recipes use live inventory items; dated orders deduct their ingredients automatically."
       >
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={startAddMenu}>
+          <Button
+            permission={{ path: "/operations/menu-recipes", method: "POST" }}
+            variant="outline"
+            onClick={startAddMenu}
+          >
             <Icon icon="solar:add-circle-linear" /> New menu item
           </Button>
-          <Button variant="outline" onClick={() => setBatchOpen(true)}>
+          <Button
+            permission={{ path: "/operations/cooking-batches", method: "POST" }}
+            variant="outline"
+            onClick={() => setBatchOpen(true)}
+          >
             <Icon icon="solar:oven-mitts-linear" /> Cook batch
           </Button>
-          <Button onClick={() => setOrderOpen(true)}>
+          <Button
+            permission={{ path: "/operations/karenderiya-sales", method: "POST" }}
+            onClick={() => setOrderOpen(true)}
+          >
             <Icon icon="solar:bill-list-linear" /> Add order transaction
           </Button>
         </div>
@@ -881,7 +892,11 @@ export function KarenderiyaPage() {
                 className="min-h-20 w-full rounded-xl border border-pink-100 bg-white p-3 text-sm outline-none focus:border-pink-600"
               />
             </div>
-            <Button className="sm:col-span-2" disabled={recordOrder.isPending}>
+            <Button
+              permission={{ path: "/operations/karenderiya-sales", method: "POST" }}
+              className="sm:col-span-2"
+              disabled={recordOrder.isPending}
+            >
               Post order
             </Button>
           </form>
@@ -946,7 +961,11 @@ export function KarenderiyaPage() {
               <Label>Notes</Label>
               <Input name="notes" />
             </div>
-            <Button className="sm:col-span-2" disabled={recordBatch.isPending}>
+            <Button
+              permission={{ path: "/operations/cooking-batches", method: "POST" }}
+              className="sm:col-span-2"
+              disabled={recordBatch.isPending}
+            >
               Complete cooking batch
             </Button>
           </form>
@@ -986,7 +1005,11 @@ export function KarenderiyaPage() {
                 className="min-h-24 w-full rounded-xl border border-pink-100 bg-white p-3 text-sm outline-none focus:border-pink-600"
               />
             </Field>
-            <Button className="w-full" disabled={updateOrder.isPending}>
+            <Button
+              permission={{ path: "/operations/karenderiya-sales", method: "PATCH" }}
+              className="w-full"
+              disabled={updateOrder.isPending}
+            >
               Update order
             </Button>
           </form>

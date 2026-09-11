@@ -294,6 +294,7 @@ export function FarmOperationsPage() {
           {dialog === "batch" && (
             <OperationForm
               title="Create pig batch"
+              permissionPath="/resources/pig-batches"
               description="Group pigs that share an arrival date, pen, or feeding plan."
               pending={createBatch.isPending}
               onSubmit={(data) =>
@@ -327,6 +328,7 @@ export function FarmOperationsPage() {
           {dialog === "weight" && (
             <OperationForm
               title="Record pig weight"
+              permissionPath="/operations/pig-measurements"
               description="Each entry updates the pig’s latest weight while preserving its history."
               pending={recordWeight.isPending}
               onSubmit={(data) =>
@@ -359,6 +361,7 @@ export function FarmOperationsPage() {
           {dialog === "feed" && (
             <OperationForm
               title="Record feed usage"
+              permissionPath="/operations/feed-usage"
               description="Deduct feed stock and allocate its cost to one pig, every active pig in a batch, or general piggery use."
               pending={recordFeed.isPending}
               onSubmit={(data) =>
@@ -446,6 +449,7 @@ export function FarmOperationsPage() {
           {dialog === "sale" && (
             <OperationForm
               title="Record piggery sale"
+              permissionPath="/operations/piggery-sales"
               description="Sell a live pig or slaughtered meat, then post revenue, cash received, cost, profit, and receivable together."
               pending={recordSale.isPending}
               onSubmit={(data) => {
@@ -618,6 +622,7 @@ function Ledger({
   );
 }
 function OperationForm({
+  permissionPath,
   title,
   description,
   pending,
@@ -627,6 +632,7 @@ function OperationForm({
   title: string;
   description: string;
   pending: boolean;
+  permissionPath: string;
   onSubmit: (data: Record<string, FormDataEntryValue>) => void;
   children: React.ReactNode;
 }) {
@@ -642,7 +648,11 @@ function OperationForm({
         }}
       >
         {children}
-        <Button className="sm:col-span-2" disabled={pending}>
+        <Button
+          permission={{ path: permissionPath, method: "POST" }}
+          className="sm:col-span-2"
+          disabled={pending}
+        >
           {pending ? "Posting…" : "Save and post"}
         </Button>
       </form>

@@ -366,6 +366,7 @@ export function CatalogDiscountManager({
                 )}
                 <div className="flex flex-wrap gap-3">
                   <Button
+                    permission={{ path: "/catalog/discounts", method: draft.id ? "PUT" : "POST" }}
                     type="submit"
                     disabled={
                       pending || !draft.productIds.length || conflicts.length > 0 || !discounts.data
@@ -440,6 +441,7 @@ export function CatalogDiscountManager({
                     </details>
                     <div className="flex gap-2">
                       <Button
+                        permission={{ path: "/catalog/discounts/id", method: "PUT" }}
                         size="sm"
                         variant="outline"
                         disabled={pending}
@@ -449,6 +451,7 @@ export function CatalogDiscountManager({
                       </Button>
                       {status !== "Expired" && (
                         <Button
+                          permission={{ path: "/catalog/discounts/id/status", method: "PATCH" }}
                           size="sm"
                           variant="outline"
                           disabled={pending}

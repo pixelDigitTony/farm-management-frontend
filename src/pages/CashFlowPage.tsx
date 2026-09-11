@@ -223,7 +223,11 @@ export function CashFlowPage() {
         description="Record bills separately from the cash payments that settle them."
       >
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setCashOpen(true)}>
+          <Button
+            permission={{ path: "/operations/cash", method: "POST" }}
+            variant="outline"
+            onClick={() => setCashOpen(true)}
+          >
             <Icon icon="solar:transfer-horizontal-linear" /> Cash movement
           </Button>
           <Button
@@ -300,6 +304,7 @@ export function CashFlowPage() {
                       <td className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button
+                            permission={{ path: "/operations/expenses", method: "PATCH" }}
                             variant="ghost"
                             size="sm"
                             onClick={() => {
@@ -310,6 +315,7 @@ export function CashFlowPage() {
                             <Icon icon="solar:pen-linear" /> Edit
                           </Button>
                           <Button
+                            permission={{ path: "/operations/expenses", method: "DELETE" }}
                             variant="ghost"
                             size="sm"
                             className="text-red-600 hover:bg-red-50"
@@ -387,7 +393,10 @@ export function CashFlowPage() {
         </TabsContent>
         <TabsContent value="accounts" className="mt-5 space-y-4">
           <div className="flex justify-end">
-            <Button onClick={() => setAccountOpen(true)}>
+            <Button
+              permission={{ path: "/resources/cash-accounts", method: "POST" }}
+              onClick={() => setAccountOpen(true)}
+            >
               <Icon icon="solar:add-circle-linear" /> New account
             </Button>
           </div>
@@ -503,7 +512,11 @@ export function CashFlowPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="sm:col-span-2" disabled={saveExpense.isPending}>
+            <Button
+              permission={{ path: "/operations/expenses", method: editing ? "PATCH" : "POST" }}
+              className="sm:col-span-2"
+              disabled={saveExpense.isPending}
+            >
               {editing ? "Update expense" : "Save expense"}
             </Button>
           </form>
@@ -645,7 +658,11 @@ export function CashFlowPage() {
               <Label>Description</Label>
               <Input name="description" required placeholder="Reason for this movement" />
             </div>
-            <Button className="sm:col-span-2" disabled={postCash.isPending}>
+            <Button
+              permission={{ path: "/operations/cash", method: "POST" }}
+              className="sm:col-span-2"
+              disabled={postCash.isPending}
+            >
               Post movement
             </Button>
           </form>
@@ -714,7 +731,11 @@ export function CashFlowPage() {
               <Label>Provider (optional)</Label>
               <Input name="provider" placeholder="Bank or e-wallet name" />
             </div>
-            <Button className="sm:col-span-2" disabled={createAccount.isPending}>
+            <Button
+              permission={{ path: "/resources/cash-accounts", method: "POST" }}
+              className="sm:col-span-2"
+              disabled={createAccount.isPending}
+            >
               Create account
             </Button>
           </form>

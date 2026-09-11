@@ -334,7 +334,11 @@ export function SettingsPage() {
                     {data.business.timezone}
                   </p>
                 </div>
-                <Button className="sm:col-span-2" disabled={saveBusiness.isPending}>
+                <Button
+                  permission={{ path: "/settings/business", method: "PATCH" }}
+                  className="sm:col-span-2"
+                  disabled={saveBusiness.isPending}
+                >
                   Save business settings
                 </Button>
               </form>
@@ -647,6 +651,7 @@ export function SettingsPage() {
                 </div>
               ))}
               <Button
+                permission={{ path: "/settings/slaughter", method: "PUT" }}
                 className="w-full"
                 onClick={() => saveSlaughter.mutate()}
                 disabled={saveSlaughter.isPending}
@@ -778,7 +783,14 @@ export function SettingsPage() {
             <Field label="Address">
               <Input name="address" defaultValue={editingContact?.address} />
             </Field>
-            <Button className="sm:col-span-2" disabled={saveContact.isPending}>
+            <Button
+              permission={{
+                path: "/resources/contacts",
+                method: editingContact ? "PATCH" : "POST",
+              }}
+              className="sm:col-span-2"
+              disabled={saveContact.isPending}
+            >
               {editingContact ? "Update contact" : "Save contact"}
             </Button>
           </form>

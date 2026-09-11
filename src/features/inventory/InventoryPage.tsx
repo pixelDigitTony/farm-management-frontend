@@ -190,7 +190,10 @@ export function InventoryPage() {
           >
             <Icon icon="solar:inbox-in-linear" /> Receive stock
           </Button>
-          <Button onClick={startAdd}>
+          <Button
+            permission={{ path: "/resources/inventory-items", method: "POST" }}
+            onClick={startAdd}
+          >
             <Icon icon="solar:add-circle-linear" />
             Add item
           </Button>
@@ -245,6 +248,7 @@ export function InventoryPage() {
                       <Icon icon="solar:pen-linear" /> Edit
                     </Button>
                     <Button
+                      permission={{ path: "/resources/inventory-items", method: "DELETE" }}
                       variant="ghost"
                       size="sm"
                       className="text-red-600 hover:bg-red-50"
@@ -296,7 +300,12 @@ export function InventoryPage() {
                       </td>
                       <td className="text-right">
                         {lot.sourceType === "PURCHASE" && lot.status !== "VOIDED" && (
-                          <Button variant="outline" size="sm" onClick={() => startReceiptEdit(lot)}>
+                          <Button
+                            permission={{ path: "/operations/inventory-receipts", method: "PATCH" }}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => startReceiptEdit(lot)}
+                          >
                             <Icon icon="solar:pen-linear" /> Edit receipt
                           </Button>
                         )}
@@ -500,7 +509,14 @@ export function InventoryPage() {
               />
               Perishable item
             </label>
-            <Button className="sm:col-span-2" disabled={saveItem.isPending}>
+            <Button
+              permission={{
+                path: "/resources/inventory-items",
+                method: editing ? "PATCH" : "POST",
+              }}
+              className="sm:col-span-2"
+              disabled={saveItem.isPending}
+            >
               {editing ? "Update item" : "Save item"}
             </Button>
           </form>
@@ -700,7 +716,14 @@ export function InventoryPage() {
             <Field label="Notes">
               <Input name="notes" defaultValue={editingReceipt?.notes} />
             </Field>
-            <Button className="sm:col-span-2" disabled={receiveStock.isPending}>
+            <Button
+              permission={{
+                path: "/operations/inventory-receipts",
+                method: editingReceipt ? "PATCH" : "POST",
+              }}
+              className="sm:col-span-2"
+              disabled={receiveStock.isPending}
+            >
               {editingReceipt ? "Save receipt correction" : "Receive and post stock"}
             </Button>
           </form>
@@ -780,7 +803,11 @@ export function InventoryPage() {
             <Field label="Notes">
               <Input name="notes" />
             </Field>
-            <Button className="sm:col-span-2" disabled={transferMeat.isPending}>
+            <Button
+              permission={{ path: "/operations/meat-transfers", method: "POST" }}
+              className="sm:col-span-2"
+              disabled={transferMeat.isPending}
+            >
               Transfer meat
             </Button>
           </form>

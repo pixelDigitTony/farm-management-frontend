@@ -1031,6 +1031,7 @@ export function LandingPageBuilderPage() {
               Start with a ready-to-edit layout, then drag components into the live preview.
             </p>
             <Button
+              permission={{ path: "/landing-page", method: "POST" }}
               className="mt-6"
               onClick={() => initialize.mutate()}
               disabled={initialize.isPending}
@@ -1097,13 +1098,18 @@ export function LandingPageBuilderPage() {
               <Icon icon="solar:cart-large-2-linear" /> Cart & checkout
             </Button>
             <Button
+              permission={{ path: "/landing-page/variants/id", method: "PATCH" }}
               variant="outline"
               onClick={() => save.mutate(draft)}
               disabled={!dirty || save.isPending}
             >
               <Icon icon="solar:diskette-linear" /> Save draft
             </Button>
-            <Button onClick={() => publish.mutate(draft)} disabled={publish.isPending}>
+            <Button
+              permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
+              onClick={() => publish.mutate(draft)}
+              disabled={publish.isPending}
+            >
               <Icon icon="solar:upload-linear" /> Publish
             </Button>
           </div>
@@ -1127,6 +1133,7 @@ export function LandingPageBuilderPage() {
             </Select>
           </div>
           <Button
+            permission={{ path: "/landing-page/variants", method: "POST" }}
             variant="outline"
             size="sm"
             onClick={() => {
@@ -1137,6 +1144,7 @@ export function LandingPageBuilderPage() {
             <Icon icon="solar:add-circle-linear" /> New from template
           </Button>
           <Button
+            permission={{ path: "/landing-page/variants", method: "POST" }}
             variant="outline"
             size="sm"
             onClick={() => {
@@ -1158,6 +1166,7 @@ export function LandingPageBuilderPage() {
             <Icon icon="solar:pen-linear" /> Rename
           </Button>
           <Button
+            permission={{ path: "/landing-page/variants/id", method: "DELETE" }}
             variant="ghost"
             size="sm"
             disabled={builder.data.variants.length <= 1}
@@ -1179,7 +1188,12 @@ export function LandingPageBuilderPage() {
                     View live
                   </a>
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => unpublish.mutate()}>
+                <Button
+                  permission={{ path: "/landing-page/unpublish", method: "POST" }}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => unpublish.mutate()}
+                >
                   Unpublish
                 </Button>
               </>
@@ -1599,7 +1613,11 @@ export function LandingPageBuilderPage() {
                 maxLength={240}
               />
             </Field>
-            <Button className="w-full" disabled={saveSettings.isPending}>
+            <Button
+              permission={{ path: "/landing-page/settings", method: "PATCH" }}
+              className="w-full"
+              disabled={saveSettings.isPending}
+            >
               Save settings
             </Button>
           </form>

@@ -23,6 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { canAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { CalendarTodo } from "@/types/domain";
 
@@ -150,7 +151,7 @@ export function CalendarTodosPage() {
   const canManage = (todo: CalendarTodo) =>
     todo.createdByUserId === user?.id || Boolean(user?.isHighestRole);
   const canUpdateStatus = (todo: CalendarTodo) =>
-    canManage(todo) || todo.assignedToUserId === user?.id;
+    canAccess(user, "calendar", "edit") && (canManage(todo) || todo.assignedToUserId === user?.id);
 
   function startCreate(date = selectedDate) {
     setEditing(undefined);
@@ -189,7 +190,10 @@ export function CalendarTodosPage() {
         title="Calendar & To-do"
         description="Plan farm and karenderiya work together, then mark each task done from the calendar."
       >
-        <Button onClick={() => startCreate()}>
+        <Button
+          permission={{ path: "/calendar-todos", method: "POST" }}
+          onClick={() => startCreate()}
+        >
           <Icon icon="solar:add-circle-linear" /> Add to-do
         </Button>
       </Header>
@@ -357,7 +361,12 @@ export function CalendarTodosPage() {
                   {format(new Date(`${selectedDate}T00:00:00`), "EEEE, MMM d")}
                 </h2>
               </div>
-              <Button variant="outline" size="sm" onClick={() => startCreate(selectedDate)}>
+              <Button
+                permission={{ path: "/calendar-todos", method: "POST" }}
+                variant="outline"
+                size="sm"
+                onClick={() => startCreate(selectedDate)}
+              >
                 <Icon icon="solar:add-circle-linear" /> Add
               </Button>
             </div>
@@ -506,10 +515,22 @@ function TodoCard({
             </div>
             {canManage ? (
               <div className="flex shrink-0">
-                <Button variant="ghost" size="icon" aria-label="Edit to-do" onClick={onEdit}>
+                <Button
+                  permission={{ path: "/calendar-todos/id", method: "PATCH" }}
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Edit to-do"
+                  onClick={onEdit}
+                >
                   <Icon icon="solar:pen-new-square-linear" className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" aria-label="Delete to-do" onClick={onDelete}>
+                <Button
+                  permission={{ path: "/calendar-todos/id", method: "DELETE" }}
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Delete to-do"
+                  onClick={onDelete}
+                >
                   <Icon icon="solar:trash-bin-trash-linear" className="size-4 text-red-600" />
                 </Button>
               </div>
@@ -648,7 +669,10 @@ function TodoDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button disabled={pending}>
+            <Button
+              permission={{ path: "/calendar-todos", method: todo ? "PATCH" : "POST" }}
+              disabled={pending}
+            >
               {pending ? "Saving…" : todo ? "Save changes" : "Add to-do"}
             </Button>
           </div>
@@ -680,7 +704,12 @@ function DeleteDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={pending} className="bg-red-600 hover:bg-red-700" onClick={onConfirm}>
+          <Button
+            permission={{ path: "/calendar-todos/id", method: "DELETE" }}
+            disabled={pending}
+            className="bg-red-600 hover:bg-red-700"
+            onClick={onConfirm}
+          >
             {pending ? "Deleting…" : "Delete to-do"}
           </Button>
         </div>

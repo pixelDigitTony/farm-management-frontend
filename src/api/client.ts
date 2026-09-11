@@ -1,3 +1,5 @@
+import { allowsRequest } from "@/lib/permissions";
+
 const API_URL = import.meta.env.VITE_API_URL ?? "/api";
 
 export class ApiError extends Error {
@@ -33,6 +35,7 @@ export type SessionUser = {
   isApproved: boolean;
   emailVerified: boolean;
   isHighestRole: boolean;
+  permissions?: string[];
   businessName: string;
 };
 
@@ -62,6 +65,19 @@ let refreshPromise: Promise<string | null> | null = null;
 const refreshLockName = "miss-v-auth-refresh";
 
 async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const currentUser = sessionUserStore.get();
+  if (
+    currentUser &&
+    !currentUser.isHighestRole &&
+    currentUser.role !== 99 &&
+    currentUser.permissions &&
+    !allowsRequest(currentUser.permissions, path, options.method)
+  )
+    throw new ApiError(
+      "Your role does not have permission for this action",
+      403,
+      "PERMISSION_DENIED",
+    );
   const publicRequest = path.startsWith("/public/");
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");

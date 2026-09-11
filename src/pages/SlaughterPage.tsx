@@ -128,7 +128,7 @@ export function SlaughterPage() {
   });
   const settings = useQuery({
     queryKey: ["settings"],
-    queryFn: () => api<{ slaughter?: Setting }>("/settings"),
+    queryFn: () => api<{ slaughter?: Setting }>("/settings/slaughter"),
   });
   const records = useQuery({
     queryKey: ["slaughters"],
@@ -600,6 +600,7 @@ export function SlaughterPage() {
               </Button>
               {quote.data && draft && (
                 <Button
+                  permission={{ path: "/operations/slaughters", method: editing ? "PUT" : "POST" }}
                   type="button"
                   className="w-full"
                   disabled={complete.isPending}
@@ -655,10 +656,16 @@ export function SlaughterPage() {
                   </td>
                   <td>
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => startEdit(record)}>
+                      <Button
+                        permission={{ path: "/operations/slaughters", method: "PUT" }}
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEdit(record)}
+                      >
                         <Icon icon="solar:pen-linear" /> Edit
                       </Button>
                       <Button
+                        permission={{ path: "/operations/slaughters", method: "DELETE" }}
                         variant="ghost"
                         size="sm"
                         className="text-red-600 hover:bg-red-50"
@@ -706,6 +713,7 @@ export function SlaughterPage() {
               Cancel
             </Button>
             <Button
+              permission={{ path: "/operations/slaughters", method: "DELETE" }}
               variant="destructive"
               disabled={remove.isPending}
               onClick={() =>
