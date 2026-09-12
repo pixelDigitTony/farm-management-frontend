@@ -183,3 +183,24 @@ it("limits an owner level change to one above the next highest role", async () =
     }),
   );
 });
+
+it("shows every permission unchecked for a new role", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api).mockResolvedValue({
+    ...initial,
+    business: {
+      ...initial.business,
+      roles: [...initial.business.roles, { level: 2, name: "New role", permissions: [] }],
+    },
+  });
+  mount();
+  await user.click(await screen.findByRole("tab", { name: "Roles" }));
+  await user.click(
+    within(screen.getByRole("row", { name: /2 New role/ })).getByRole("button", {
+      name: "Permissions",
+    }),
+  );
+  const checkboxes = within(screen.getByRole("dialog")).getAllByRole("checkbox");
+  expect(checkboxes.length).toBeGreaterThan(0);
+  for (const checkbox of checkboxes) expect(checkbox).not.toBeChecked();
+});

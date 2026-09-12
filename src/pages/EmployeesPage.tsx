@@ -246,9 +246,9 @@ export function EmployeesPage() {
                   />
                 </Field>
                 <p className="text-sm text-stone-500">
-                  New lower roles start with no module access. Configure Permissions after creating
-                  the role. The owner moves above new roles automatically; 98 is reserved for the
-                  owner and 99 for Super Admin.
+                  All new roles start with every permission unchecked and no module access. Open
+                  Permissions after creating a role to grant access. The owner moves above new roles
+                  automatically; 98 is reserved for the owner and 99 for Super Admin.
                 </p>
                 <Button disabled={mutate.isPending}>Create role</Button>
               </form>
