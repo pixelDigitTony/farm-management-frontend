@@ -67,6 +67,7 @@ const refreshLockName = "miss-v-auth-refresh";
 async function performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const currentUser = sessionUserStore.get();
   if (
+    !path.startsWith("/images/") &&
     currentUser &&
     !currentUser.isHighestRole &&
     currentUser.role !== 99 &&

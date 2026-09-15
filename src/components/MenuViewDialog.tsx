@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useRef, useState } from "react";
+import { StoredImage } from "@/components/StoredImage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -56,22 +57,32 @@ export function MenuViewDialog({ menu, onOpenChange }: MenuViewDialogProps) {
               ref={mediaContainerRef}
               className="overflow-hidden rounded-2xl border border-pink-100 bg-stone-950"
             >
-              <iframe
-                src={media.embedUrl}
-                title={`${menu?.name ?? "Menu item"} media`}
-                style={media.provider === "Facebook" ? { height: facebookPlayerHeight } : undefined}
-                className={
-                  media.provider === "Facebook"
-                    ? "w-full"
-                    : media.provider === "Instagram"
-                      ? "h-[min(72vh,720px)] w-full"
-                      : "h-[min(65vh,560px)] w-full"
-                }
-                allow="autoplay; fullscreen"
-                allowFullScreen
-                loading="lazy"
-                referrerPolicy="strict-origin-when-cross-origin"
-              />
+              {media.provider === "Uploaded image" ? (
+                <StoredImage
+                  src={media.embedUrl}
+                  alt={menu?.name ?? "Menu photo"}
+                  className="max-h-96 w-full object-contain"
+                />
+              ) : (
+                <iframe
+                  src={media.embedUrl}
+                  title={`${menu?.name ?? "Menu item"} media`}
+                  style={
+                    media.provider === "Facebook" ? { height: facebookPlayerHeight } : undefined
+                  }
+                  className={
+                    media.provider === "Facebook"
+                      ? "w-full"
+                      : media.provider === "Instagram"
+                        ? "h-[min(72vh,720px)] w-full"
+                        : "h-[min(65vh,560px)] w-full"
+                  }
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                />
+              )}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">

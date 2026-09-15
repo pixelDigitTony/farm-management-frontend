@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react";
+import { ImageUpload } from "@/components/ImageUpload";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
@@ -35,10 +36,18 @@ export function MenuMediaFields({ links, onChange }: GoogleDriveMediaFieldsProps
         </Button>
       </div>
 
+      <ImageUpload
+        scope="menu"
+        selection={links.map((link) => link.value).join("\n")}
+        disabled={links.filter((link) => link.value).length >= 20}
+        onReady={(url) =>
+          onChange([...links.filter((link) => link.value), ...createMenuMediaLinks([url])])
+        }
+      />
       {links.map((link, index) => (
         <div key={link.id} className="grid gap-2 sm:grid-cols-[1fr_auto]">
           <Input
-            type="url"
+            type="text"
             value={link.value}
             aria-label={`Menu media link ${index + 1}`}
             placeholder="Paste a Drive, YouTube, Instagram, or Facebook link"

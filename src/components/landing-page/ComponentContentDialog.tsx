@@ -1,4 +1,5 @@
 import { cloneElement, useId, useState } from "react";
+import { ImageUpload } from "@/components/ImageUpload";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -101,9 +102,15 @@ export function ComponentContentDialog({
                     onChange={(e) => replaceContent({ ...component.content, body: e.target.value })}
                   />
                 </Field>
+                <ImageUpload
+                  scope="landing-page"
+                  profile="display"
+                  selection={component.content.mediaUrl}
+                  onReady={(url) => replaceContent({ ...component.content, mediaUrl: url })}
+                />
                 <Field label="Public media URL">
                   <Input
-                    type="url"
+                    type="text"
                     value={component.content.mediaUrl}
                     onChange={(e) =>
                       replaceContent({ ...component.content, mediaUrl: e.target.value })
@@ -210,6 +217,14 @@ export function ComponentContentDialog({
             )}
             {component.type === "GALLERY" && (
               <>
+                <ImageUpload
+                  scope="landing-page"
+                  profile="display"
+                  selection={mediaUrls}
+                  onReady={(url) =>
+                    setMediaUrls((current) => [current, url].filter(Boolean).join("\n"))
+                  }
+                />
                 <Field label="Heading">
                   <Input
                     value={component.content.heading}

@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useRef, useState } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
+import { StoredImage } from "@/components/StoredImage";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
 import type {
@@ -75,7 +76,7 @@ function ActionLink({
 function Media({ url, title, className = "" }: { url: string; title: string; className?: string }) {
   if (!url) return null;
   const embed = getMenuMediaEmbed(url);
-  if (embed)
+  if (embed && embed.provider !== "Uploaded image")
     return (
       <iframe
         src={embed.embedUrl}
@@ -87,7 +88,7 @@ function Media({ url, title, className = "" }: { url: string; title: string; cla
       />
     );
   return (
-    <img
+    <StoredImage
       src={url}
       alt={title}
       className={`h-full w-full object-cover ${className}`}

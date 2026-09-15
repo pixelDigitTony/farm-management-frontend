@@ -25,12 +25,19 @@ export function getGoogleDrivePreviewUrl(value?: string | null) {
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 const INSTAGRAM_CODE = /^[A-Za-z0-9_-]+$/;
 
-export type MenuMediaProvider = "Google Drive" | "YouTube" | "Instagram" | "Facebook";
+export type MenuMediaProvider =
+  | "Uploaded image"
+  | "Google Drive"
+  | "YouTube"
+  | "Instagram"
+  | "Facebook";
 
 export function getMenuMediaEmbed(
   value?: string | null,
   facebookWidth = 500,
 ): { embedUrl: string; provider: MenuMediaProvider } | undefined {
+  if (/^\/api\/images\/[a-f0-9]{24}$/.test(value ?? ""))
+    return { embedUrl: value ?? "", provider: "Uploaded image" };
   const drivePreviewUrl = getGoogleDrivePreviewUrl(value);
   if (drivePreviewUrl) return { embedUrl: drivePreviewUrl, provider: "Google Drive" };
   if (!value) return undefined;

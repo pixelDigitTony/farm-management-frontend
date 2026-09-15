@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "@/api/client";
 import { CatalogDiscountPrice, LiveDiscountCountdown } from "@/components/CatalogDiscountPrice";
 import { LandingPageRenderer } from "@/components/landing-page/LandingPageRenderer";
+import { StoredImage } from "@/components/StoredImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
@@ -461,7 +462,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                 {pricedCart.map((line) => (
                   <div key={line.key} className="flex gap-3 border-b border-pink-100 pb-4">
                     {line.mediaUrl ? (
-                      <img
+                      <StoredImage
                         src={line.mediaUrl}
                         alt={line.name}
                         className="size-16 rounded-xl object-cover"
