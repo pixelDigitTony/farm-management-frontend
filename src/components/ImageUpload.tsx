@@ -37,6 +37,7 @@ export function ImageUpload({
   const [busy, setBusy] = useState(false);
   const [preserve, setPreserve] = useState(false);
   const fileRef = useRef<File | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
   const job = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -146,11 +147,26 @@ export function ImageUpload({
     }
   }
   return (
-    <div ref={root} className="space-y-2 rounded-xl border border-pink-100 p-3">
-      <label className="block text-sm font-medium">
-        Upload a photo
+    <div ref={root} className="space-y-3 rounded-xl border border-pink-200 bg-pink-50/40 p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          disabled={disabled}
+          className="h-11 w-full cursor-pointer sm:w-auto"
+          onClick={() => inputRef.current?.click()}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 16V4m-4 4 4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+          </svg>
+          Upload a photo
+        </Button>
+        <span className="min-w-0 text-xs text-stone-600 break-all">
+          {fileRef.current?.name || "Choose an image from your device"}
+        </span>
         <input
-          className="mt-2 block w-full text-sm"
+          ref={inputRef}
+          className="hidden"
+          aria-label="Upload a photo"
           type="file"
           accept="image/jpeg,image/png,image/webp,image/avif"
           disabled={disabled}
@@ -160,7 +176,7 @@ export function ImageUpload({
             event.target.value = "";
           }}
         />
-      </label>
+      </div>
       <label className="flex items-center gap-2 text-xs">
         <input
           type="checkbox"
