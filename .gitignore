@@ -12,3 +12,7 @@ playwright-report/
 test-results/
 .lighthouseci/
 artifacts/
+
+.playwright-cli/
+output/playwright/
+bun.lock

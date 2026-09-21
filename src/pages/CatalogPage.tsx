@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { CatalogDiscountManager } from "@/components/CatalogDiscountManager";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
+import { ImageUpload } from "@/components/ImageUpload";
 import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
+import { StoredImage } from "@/components/StoredImage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -310,7 +312,7 @@ export function CatalogPage() {
                 {group.products.map((product) => (
                   <Card key={product._id} className={!product.isActive ? "opacity-60" : ""}>
                     {product.mediaUrls?.[0] && (
-                      <img
+                      <StoredImage
                         src={product.mediaUrls[0]}
                         alt={product.name}
                         className="h-44 w-full rounded-t-2xl object-cover"
@@ -493,7 +495,18 @@ export function CatalogPage() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <Label>Public media links (one HTTPS link per line)</Label>
+                <ImageUpload
+                  scope="catalog"
+                  selection={draft.mediaUrls}
+                  disabled={draft.mediaUrls.split("\n").filter(Boolean).length >= 8}
+                  onReady={(url) =>
+                    setDraft((current) => ({
+                      ...current,
+                      mediaUrls: [current.mediaUrls, url].filter(Boolean).join("\n"),
+                    }))
+                  }
+                />
+                <Label>Media links (one per line)</Label>
                 <textarea
                   className={textAreaClass}
                   value={draft.mediaUrls}
