@@ -1,20 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { api, restoreAccessToken, tokenStore } from "@/api/client";
+import { api } from "@/api/client";
 import { ImageEditor } from "@/components/ImageEditor";
 import { StoredImage } from "@/components/StoredImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
-type LibraryImage = {
-  id: string;
-  imageUrl: string;
-  mime: string;
-  width: number;
-  height: number;
-  byteLength: number;
-  createdAt: string;
-};
-type LibraryPage = { items: LibraryImage[]; nextCursor: string | null };
+import {
+  type LibraryImage,
+  type LibraryPage,
+  openImageCopy,
+  validateImageFile,
+} from "@/lib/media-library";
+
 export function MediaPicker({
   scope,
   busy,
@@ -88,23 +85,10 @@ export function MediaPicker({
     setError("");
     setNotice("");
     try {
-      const request = () =>
-        fetch(`${import.meta.env.VITE_API_URL ?? "/api"}/images/${selected.id}`, {
-          signal: controller.signal,
-          credentials: "include",
-          headers: { Authorization: `Bearer ${tokenStore.get()}` },
-        });
-      let response = await request();
-      if (response.status === 401 && (await restoreAccessToken())) response = await request();
-      if (!response.ok) throw new Error("Could not open this image for editing.");
-      const blob = await response.blob();
+      const copy = await openImageCopy(selected, controller.signal);
       if (controller.signal.aborted) return;
       setLibraryOnly(false);
-      setFile(
-        new File([blob], `image-${selected.id}.${selected.mime.split("/")[1] ?? "png"}`, {
-          type: blob.type,
-        }),
-      );
+      setFile(copy);
     } catch (failure) {
       if (!controller.signal.aborted)
         setError(failure instanceof Error ? failure.message : "Could not open image.");
@@ -139,12 +123,9 @@ export function MediaPicker({
             if (!chosen) return;
             setError("");
             setNotice("");
-            if (chosen.size > 20 * 1024 * 1024) {
-              setError("Choose an image smaller than 20 MB.");
-              return;
-            }
-            if (!["image/jpeg", "image/png", "image/webp", "image/avif"].includes(chosen.type)) {
-              setError("Choose a JPEG, PNG, WebP or AVIF image.");
+            const validation = validateImageFile(chosen);
+            if (validation) {
+              setError(validation);
               return;
             }
             setFile(chosen);

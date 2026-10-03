@@ -601,7 +601,9 @@ function RolePermissionsDialog({
         <p className="mt-3 text-sm text-stone-500">
           Some workflows need related modules: Cash flow for payment accounts, Inventory for
           ingredients and stock, Pigs for slaughter, and Menu for cooking. Overview and Reports
-          include business-wide financial summaries.
+          include business-wide financial summaries. In Media library, Create allows uploads, Edit
+          with Create saves edited copies, and Delete allows moving photos to trash and restoring
+          them.
         </p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[280px] text-left text-xs sm:text-sm">

@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/api/client";
+import { useEffect, useRef, useState } from "react";
 import { MediaPicker } from "@/components/MediaPicker";
 import { StoredImage } from "@/components/StoredImage";
 import { Button } from "@/components/ui/button";
+import { useImageUpload } from "@/hooks/useImageUpload";
 import { getMenuMediaEmbed } from "@/lib/google-drive";
 
-type Status = {
-  jobId: string;
-  state: "queued" | "processing" | "ready" | "failed";
-  imageUrl?: string;
-  error?: string;
-};
 export function ImageUpload({
   scope,
   profile = "photo",
@@ -33,35 +27,25 @@ export function ImageUpload({
         return media?.provider === "Uploaded image" || (/^https:\/\//.test(value) && !media);
       }),
   );
-  const [status, setStatus] = useState("");
+  const { busy, status, setStatus, upload: uploadFile, cancel } = useImageUpload(scope);
   const [preview, setPreview] = useState("");
-  const [busy, setBusy] = useState(false);
   const [preserve, setPreserve] = useState(false);
   const [picker, setPicker] = useState(false);
   const fileRef = useRef<File | null>(null);
-  const controller = useRef<AbortController | null>(null);
-  const job = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const completedSelection = useRef(false);
   const ready = useRef(onReady);
   ready.current = onReady;
-  const cancel = useCallback(() => {
-    controller.current?.abort();
-    controller.current = null;
-    if (job.current) void api(`/images/jobs/${job.current}`, { method: "DELETE" }).catch(() => {});
-    job.current = null;
-  }, []);
   useEffect(() => {
     void selection;
     cancel();
-    setBusy(false);
     if (completedSelection.current) {
       completedSelection.current = false;
       return cancel;
     }
     setStatus("");
     return cancel;
-  }, [selection, cancel]);
+  }, [selection, cancel, setStatus]);
   useEffect(
     () => () => {
       if (preview) URL.revokeObjectURL(preview);
@@ -78,78 +62,19 @@ export function ImageUpload({
     };
     form.addEventListener("submit", stop, true);
     return () => form.removeEventListener("submit", stop, true);
-  }, [busy, picker]);
+  }, [busy, picker, setStatus]);
   async function upload(file: File, libraryOnly = false): Promise<boolean> {
-    cancel();
-    const control = new AbortController();
-    controller.current = control;
     fileRef.current = file;
     setPreview(URL.createObjectURL(file));
-    setBusy(true);
-    setStatus("Uploading");
-    try {
-      const started = await api<Status>(
-        `/images/jobs?scope=${scope}&profile=${preserve ? "preserve" : profile}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: file,
-          signal: control.signal,
-        },
-      );
-      if (control.signal.aborted) return false;
-      job.current = started.jobId;
-      for (let attempt = 0; attempt < 60; attempt++) {
-        const current = await api<Status>(`/images/jobs/${started.jobId}`, {
-          signal: control.signal,
-        });
-        if (control.signal.aborted) return false;
-        setStatus(
-          current.state === "queued"
-            ? "Queued"
-            : current.state === "processing"
-              ? "Processing"
-              : current.state === "ready"
-                ? "Ready — save your changes to use this image"
-                : (current.error ?? "Upload failed"),
-        );
-        if (current.state === "failed") {
-          job.current = null;
-          break;
-        }
-        if (current.state === "ready" && current.imageUrl) {
-          job.current = null;
-          if (!libraryOnly) {
-            completedSelection.current = true;
-            ready.current(current.imageUrl);
-            setPicker(false);
-          } else setStatus("Image saved to your company’s media library.");
-          return true;
-        }
-        if (attempt === 59)
-          throw new Error("Processing is taking too long. Cancel or retry later.");
-        await new Promise<void>((resolve, reject) => {
-          const abort = () => {
-            clearTimeout(timer);
-            reject(new DOMException("Aborted", "AbortError"));
-          };
-          const timer = setTimeout(
-            () => {
-              control.signal.removeEventListener("abort", abort);
-              resolve();
-            },
-            Math.min(1000 * 1.4 ** attempt, 10_000),
-          );
-          control.signal.addEventListener("abort", abort, { once: true });
-        });
-      }
-    } catch (error) {
-      if (!control.signal.aborted)
-        setStatus(error instanceof Error ? error.message : "Upload failed");
-    } finally {
-      if (!control.signal.aborted) setBusy(false);
-    }
-    return false;
+    const imageUrl = await uploadFile(file, preserve ? "preserve" : profile);
+    if (!imageUrl) return false;
+    if (!libraryOnly) {
+      completedSelection.current = true;
+      ready.current(imageUrl);
+      setPicker(false);
+      setStatus("Ready — save your changes to use this image");
+    } else setStatus("Image saved to your company’s media library.");
+    return true;
   }
   return (
     <div ref={root} className="mb-4 space-y-3 rounded-xl border border-pink-200 bg-pink-50/40 p-3">
@@ -217,7 +142,6 @@ export function ImageUpload({
           variant="outline"
           onClick={() => {
             cancel();
-            setBusy(false);
             setStatus("Upload cancelled");
           }}
         >
@@ -231,7 +155,6 @@ export function ImageUpload({
           status={status}
           onClose={() => {
             cancel();
-            setBusy(false);
             setPicker(false);
             if (busy) setStatus("Upload cancelled");
           }}

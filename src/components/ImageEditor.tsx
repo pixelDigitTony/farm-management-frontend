@@ -17,6 +17,7 @@ export function ImageEditor({
   onBack,
   onCancel,
   libraryOnlyInitial = false,
+  libraryOnlyLocked = false,
 }: {
   file: File;
   busy: boolean;
@@ -25,6 +26,7 @@ export function ImageEditor({
   onBack: () => void;
   onCancel: () => void;
   libraryOnlyInitial?: boolean;
+  libraryOnlyLocked?: boolean;
 }) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const widthId = useId();
@@ -363,15 +365,17 @@ export function ImageEditor({
             {geometry?.outputWidth} × {geometry?.outputHeight} px ·{" "}
             {(prepared.size / 1024).toFixed(0)} KB
           </p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={libraryOnly}
-              disabled={busy}
-              onChange={(event) => setLibraryOnly(event.target.checked)}
-            />
-            Save to media library only
-          </label>
+          {!libraryOnlyLocked && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={libraryOnly}
+                disabled={busy}
+                onChange={(event) => setLibraryOnly(event.target.checked)}
+              />
+              Save to media library only
+            </label>
+          )}
           <p className="text-xs text-stone-500">
             Every upload is saved to your company’s library. Images may be optimized to fit their
             destination.

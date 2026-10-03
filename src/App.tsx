@@ -74,6 +74,9 @@ const ActivityLogPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const MediaLibraryPage = lazy(() =>
+  import("@/pages/MediaLibraryPage").then((m) => ({ default: m.MediaLibraryPage })),
+);
 
 function Protected() {
   const session = useQuery({
@@ -194,6 +197,7 @@ export function App() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="activity-log" element={<ActivityLogPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="media-library" element={<MediaLibraryPage />} />
           <Route path="employees" element={<EmployeesPage />} />
           <Route path="admin" element={<AdminPage />} />
         </Route>

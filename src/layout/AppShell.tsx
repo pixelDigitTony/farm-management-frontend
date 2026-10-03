@@ -70,6 +70,7 @@ const navGroups = [
         access: "highest",
       },
       { label: "Admin", to: "/admin", icon: "solar:shield-user-linear", access: "super" },
+      { label: "Media library", to: "/media-library", icon: "solar:gallery-linear" },
       { label: "Settings", to: "/settings", icon: "solar:settings-linear" },
     ],
   },
