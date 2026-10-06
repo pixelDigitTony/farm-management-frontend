@@ -47,6 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { useDraftAutosave } from "@/hooks/useDraftAutosave";
 import { getPublicSiteUrl } from "@/lib/public-site";
 import type {
   LandingPageBuilderData,
@@ -677,7 +678,9 @@ export function LandingPageBuilderPage() {
   const [device, setDevice] = useState<"DESKTOP" | "TABLET" | "MOBILE">("DESKTOP");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commerceSettingsOpen, setCommerceSettingsOpen] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const editingLocked = useRef(false);
   const [activePaletteType, setActivePaletteType] = useState<LandingPageComponentType>();
   const [addedComponentId, setAddedComponentId] = useState<string>();
   const undoStack = useRef<LandingPageVariant[]>([]);
@@ -692,6 +695,27 @@ export function LandingPageBuilderPage() {
       const data = await api<LandingPageBuilderPayload>("/landing-page");
       return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
     },
+  });
+  const autosave = useDraftAutosave(async (variant: LandingPageVariant) => {
+    const saved = normalizeLandingPageVariant(
+      await api<LandingPageVariantPayload>(`/landing-page/variants/${variant._id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: variant.name,
+          theme: variant.theme,
+          commerce: variant.commerce,
+          sections: variant.sections,
+        }),
+      }),
+    );
+    queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
+      current
+        ? {
+            ...current,
+            variants: current.variants.map((item) => (item._id === saved._id ? saved : item)),
+          }
+        : current,
+    );
   });
   useEffect(() => {
     if (!builder.data?.variants.length || draft) return;
@@ -716,36 +740,49 @@ export function LandingPageBuilderPage() {
   }, [addedComponentId]);
 
   function commit(next: LandingPageVariant) {
+    if (editingLocked.current) return;
     if (draft) undoStack.current = [...undoStack.current, structuredClone(draft)].slice(-100);
     redoStack.current = [];
     setDraft(next);
-    setDirty(true);
+    autosave.schedule(next);
   }
   function undo() {
+    if (editingLocked.current) return;
     const previous = undoStack.current.pop();
     if (!previous || !draft) return;
     redoStack.current.push(structuredClone(draft));
     setDraft(previous);
-    setDirty(true);
+    autosave.schedule(previous);
   }
   function redo() {
+    if (editingLocked.current) return;
     const next = redoStack.current.pop();
     if (!next || !draft) return;
     undoStack.current.push(structuredClone(draft));
     setDraft(next);
-    setDirty(true);
+    autosave.schedule(next);
   }
-  function chooseVariant(id: string) {
-    if (dirty && !window.confirm("Discard unsaved changes and switch variants?")) return;
-    const next = builder.data?.variants.find((variant) => variant._id === id);
-    if (!next) return;
-    setVariantId(id);
-    setDraft(structuredClone(next));
-    setSelectedSectionId(next.sections[0]?.id);
-    setSelectedComponentId(undefined);
-    setDirty(false);
-    undoStack.current = [];
-    redoStack.current = [];
+  async function chooseVariant(id: string) {
+    if (editingLocked.current || id === variantId) return;
+    editingLocked.current = true;
+    setSwitching(true);
+    try {
+      if (!(await autosave.flush())) return;
+      const next = queryClient
+        .getQueryData<LandingPageBuilderData>(["landing-page-builder"])
+        ?.variants.find((variant) => variant._id === id);
+      if (!next) return;
+      setVariantId(id);
+      setDraft(structuredClone(next));
+      setSelectedSectionId(next.sections[0]?.id);
+      setSelectedComponentId(undefined);
+      setContentEditor(undefined);
+      undoStack.current = [];
+      redoStack.current = [];
+    } finally {
+      editingLocked.current = false;
+      setSwitching(false);
+    }
   }
   function updateComponent(component: LandingPageComponent) {
     if (!draft) return;
@@ -906,51 +943,24 @@ export function LandingPageBuilderPage() {
     },
     onError: (error) => toast.error(error.message),
   });
-  const save = useMutation({
-    mutationFn: async (variant: LandingPageVariant) => {
-      const saved = await api<LandingPageVariantPayload>(`/landing-page/variants/${variant._id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: variant.name,
-          theme: variant.theme,
-          commerce: variant.commerce,
-          sections: variant.sections,
-        }),
-      });
-      return normalizeLandingPageVariant(saved);
-    },
-    onSuccess: (saved) => {
-      setDraft(structuredClone(saved));
-      setDirty(false);
-      undoStack.current = [];
-      redoStack.current = [];
-      void refresh();
-      toast.success("Draft saved");
-    },
-    onError: (error) => toast.error(error.message),
-  });
   const publish = useMutation({
+    onMutate: () => {
+      editingLocked.current = true;
+    },
     mutationFn: async (variant: LandingPageVariant) => {
-      if (dirty)
-        await api(`/landing-page/variants/${variant._id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            name: variant.name,
-            theme: variant.theme,
-            commerce: variant.commerce,
-            sections: variant.sections,
-          }),
-        });
+      if (!(await autosave.flush())) throw new Error("Fix the draft save error before publishing");
       return api(`/landing-page/variants/${variant._id}/publish`, { method: "POST" });
     },
     onSuccess: () => {
-      setDirty(false);
       void refresh();
       toast.success("Landing page published", {
         description: getPublicSiteUrl(builder.data?.page?.slug ?? ""),
       });
     },
     onError: (error) => toast.error(error.message),
+    onSettled: () => {
+      editingLocked.current = false;
+    },
   });
   const unpublish = useMutation({
     mutationFn: () => api("/landing-page/unpublish", { method: "POST" }),
@@ -961,7 +971,12 @@ export function LandingPageBuilderPage() {
     onError: (error) => toast.error(error.message),
   });
   const createVariant = useMutation({
+    onMutate: () => {
+      editingLocked.current = true;
+    },
     mutationFn: async ({ name, source }: { name: string; source?: string }) => {
+      if (!(await autosave.flush()))
+        throw new Error("Fix the draft save error before changing variants");
       const created = await api<LandingPageVariantPayload>("/landing-page/variants", {
         method: "POST",
         body: JSON.stringify({ name, duplicateFromId: source }),
@@ -974,13 +989,24 @@ export function LandingPageBuilderPage() {
       setDraft(structuredClone(created));
       setSelectedSectionId(created.sections[0]?.id);
       setSelectedComponentId(undefined);
-      setDirty(false);
+      undoStack.current = [];
+      redoStack.current = [];
+      setContentEditor(undefined);
       toast.success("Variant created");
     },
     onError: (error) => toast.error(error.message),
+    onSettled: () => {
+      editingLocked.current = false;
+    },
   });
   const removeVariant = useMutation({
-    mutationFn: (id: string) => api<void>(`/landing-page/variants/${id}`, { method: "DELETE" }),
+    onMutate: () => {
+      editingLocked.current = true;
+    },
+    mutationFn: async (id: string) => {
+      await autosave.discard();
+      return api<void>(`/landing-page/variants/${id}`, { method: "DELETE" });
+    },
     onSuccess: (_data, deletedId) => {
       queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
         current
@@ -994,11 +1020,58 @@ export function LandingPageBuilderPage() {
       setVariantId("");
       setSelectedSectionId(undefined);
       setSelectedComponentId(undefined);
-      setDirty(false);
+      undoStack.current = [];
+      redoStack.current = [];
+      setContentEditor(undefined);
       void refresh();
       toast.success("Variant deleted");
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => {
+      if (draft) autosave.schedule(draft);
+      toast.error(error.message);
+    },
+    onSettled: () => {
+      editingLocked.current = false;
+    },
+  });
+  const resetVariant = useMutation({
+    onMutate: () => {
+      editingLocked.current = true;
+    },
+    mutationFn: async (id: string) => {
+      await autosave.discard();
+      return normalizeLandingPageVariant(
+        await api<LandingPageVariantPayload>(`/landing-page/variants/${id}/reset`, {
+          method: "PATCH",
+        }),
+      );
+    },
+    onSuccess: (reset) => {
+      queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
+        current
+          ? {
+              ...current,
+              variants: current.variants.map((item) => (item._id === reset._id ? reset : item)),
+            }
+          : current,
+      );
+      setDraft(structuredClone(reset));
+      setSelectedSectionId(reset.sections[0]?.id);
+      setSelectedComponentId(undefined);
+      setContentEditor(undefined);
+      setAddedComponentId(undefined);
+      undoStack.current = [];
+      redoStack.current = [];
+      setResetOpen(false);
+      toast.success("Variant reset to the default template");
+    },
+    onError: (error) => {
+      if (draft) autosave.schedule(draft);
+      toast.error(error.message);
+    },
+    onSettled: () => {
+      editingLocked.current = false;
+    },
   });
   const saveSettings = useMutation({
     mutationFn: (payload: unknown) =>
@@ -1044,6 +1117,12 @@ export function LandingPageBuilderPage() {
     );
   if (!draft) return <PageSkeleton />;
   const page = builder.data.page;
+  const busy =
+    switching ||
+    publish.isPending ||
+    createVariant.isPending ||
+    removeVariant.isPending ||
+    resetVariant.isPending;
   const selectedSection = draft.sections.find((section) => section.id === selectedSectionId);
   const selected = draft.sections
     .flatMap((section) => section.components)
@@ -1085,10 +1164,10 @@ export function LandingPageBuilderPage() {
       onDragCancel={() => setActivePaletteType(undefined)}
       onDragEnd={onDragEnd}
     >
-      <div className="space-y-5">
+      <div className="space-y-5" inert={busy}>
         <Header
           title="Landing page builder"
-          description="Drag components into the live preview, save variants, and publish when ready."
+          description="Changes save automatically as drafts. Publish when ready to update your live page."
         >
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setSettingsOpen(true)}>
@@ -1096,14 +1175,6 @@ export function LandingPageBuilderPage() {
             </Button>
             <Button variant="outline" onClick={() => setCommerceSettingsOpen(true)}>
               <Icon icon="solar:cart-large-2-linear" /> Cart & checkout
-            </Button>
-            <Button
-              permission={{ path: "/landing-page/variants/id", method: "PATCH" }}
-              variant="outline"
-              onClick={() => save.mutate(draft)}
-              disabled={!dirty || save.isPending}
-            >
-              <Icon icon="solar:diskette-linear" /> Save draft
             </Button>
             <Button
               permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
@@ -1114,6 +1185,25 @@ export function LandingPageBuilderPage() {
             </Button>
           </div>
         </Header>
+
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-sm text-stone-500"
+        >
+          {autosave.status === "error" ? (
+            <>
+              <span className="text-red-600">Draft not saved: {autosave.error}</span>
+              <Button variant="outline" size="sm" onClick={() => void autosave.flush()}>
+                Retry
+              </Button>
+            </>
+          ) : autosave.status === "saved" ? (
+            "Draft saved automatically"
+          ) : (
+            "Saving draft…"
+          )}
+        </div>
 
         <Card className="flex flex-wrap items-center gap-3 p-4">
           <div className="min-w-48">
@@ -1164,6 +1254,14 @@ export function LandingPageBuilderPage() {
             }}
           >
             <Icon icon="solar:pen-linear" /> Rename
+          </Button>
+          <Button
+            permission={{ path: "/landing-page/variants/id/reset", method: "PATCH" }}
+            variant="ghost"
+            size="sm"
+            onClick={() => setResetOpen(true)}
+          >
+            <Icon icon="solar:restart-linear" /> Reset
           </Button>
           <Button
             permission={{ path: "/landing-page/variants/id", method: "DELETE" }}
@@ -1332,7 +1430,11 @@ export function LandingPageBuilderPage() {
                   Live preview
                 </p>
                 <p className="text-xs text-stone-500">
-                  {dirty ? "Unsaved changes" : "Draft saved"}
+                  {autosave.status === "saved"
+                    ? "Draft saved"
+                    : autosave.status === "error"
+                      ? "Draft not saved"
+                      : "Saving draft…"}
                 </p>
               </div>
               <div className="flex items-center gap-1 rounded-xl bg-pink-50 p-1">
@@ -1582,6 +1684,38 @@ export function LandingPageBuilderPage() {
           }}
         />
       )}
+      <Dialog
+        open={resetOpen}
+        onOpenChange={(open) => {
+          if (!resetVariant.isPending) setResetOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Reset {draft.name}?</DialogTitle>
+          <DialogDescription>
+            This restores the default landing-page layout, theme, and checkout settings for this
+            variant. Recent changes will be lost, including changes already saved automatically.
+            This cannot be undone. Your published page stays the same until you publish again.
+          </DialogDescription>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={resetVariant.isPending}
+              onClick={() => setResetOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              permission={{ path: "/landing-page/variants/id/reset", method: "PATCH" }}
+              variant="destructive"
+              disabled={resetVariant.isPending}
+              onClick={() => resetVariant.mutate(draft._id)}
+            >
+              {resetVariant.isPending ? "Resetting…" : "Reset variant"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
           <DialogTitle>Landing-page settings</DialogTitle>
@@ -1801,7 +1935,7 @@ export function LandingPageBuilderPage() {
               </p>
             )}
             <Button className="w-full" onClick={() => setCommerceSettingsOpen(false)}>
-              Done — remember to save draft
+              Done
             </Button>
           </div>
         </DialogContent>
