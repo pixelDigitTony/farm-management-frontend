@@ -1,1403 +1,1072 @@
-import {
-  DndContext,
-  type DragEndEvent,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  rectIntersection,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  rectSortingStrategy,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Icon } from "@iconify/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { api } from "@/api/client";
-import { ComponentContentDialog } from "@/components/landing-page/ComponentContentDialog";
+import * as v from "valibot";
+import { api, sessionUserStore } from "@/api/client";
 import {
-  componentChoices,
-  FloatingComponentToolbar,
-} from "@/components/landing-page/ComponentPalette";
-import {
-  LandingPageComponentView,
-  sectionScrollStyle,
-} from "@/components/landing-page/LandingPageRenderer";
-import { Header } from "@/components/PageHeader";
+  BackgroundInspector,
+  BlockInspector,
+  ColorField,
+  InspectorField,
+  InspectorSelect,
+} from "@/components/landing-page/editor/Inspector";
+import { PreviewFrame } from "@/components/landing-page/editor/PreviewFrame";
+import { SectionTree } from "@/components/landing-page/editor/SectionTree";
+import { LandingIcon as Icon } from "@/components/landing-page/LandingIcon";
 import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useDraftAutosave } from "@/hooks/useDraftAutosave";
+import { blockRegistry } from "@/lib/landing-page/registry";
+import { landingPageVariantUpdateSchema } from "@/lib/landing-page/schema";
+import { canAccess } from "@/lib/permissions";
 import { getPublicSiteUrl } from "@/lib/public-site";
-import type {
-  LandingPageBuilderData,
-  LandingPageComponent,
-  LandingPageComponentType,
-  LandingPageSection,
-  LandingPageVariant,
-  LandingPageVariantPayload,
-} from "@/types/landing-page";
 import {
   createLandingComponent,
   createLandingSection,
+  type LandingGoal,
+  type LandingPageBuilderData,
+  type LandingPageComponent,
+  type LandingPageComponentType,
+  type LandingPageSection,
+  type LandingPageVariant,
+  type LandingPageVariantPayload,
+  type LandingTemplate,
   normalizeLandingPageVariant,
 } from "@/types/landing-page";
+import "@/components/landing-page/editor/builder.css";
 
-type LandingPageBuilderPayload = Omit<LandingPageBuilderData, "variants"> & {
+type Payload = Omit<LandingPageBuilderData, "variants"> & {
   variants: LandingPageVariantPayload[];
+  capabilities?: { schemaVersions: number[]; templates: boolean };
 };
-
-function SortableComponent({
-  component,
-  variant,
-  menuItems,
-  catalogItems,
-  selected,
-  onSelect,
-  onToggle,
-  onDuplicate,
-  onRemove,
-  device,
-}: {
-  component: LandingPageComponent;
-  variant: LandingPageVariant;
-  menuItems: LandingPageBuilderData["menuItems"];
-  catalogItems: LandingPageBuilderData["catalogItems"];
-  selected: boolean;
-  onSelect: () => void;
-  onToggle: () => void;
-  onDuplicate: () => void;
-  onRemove: () => void;
-  device: "DESKTOP" | "TABLET" | "MOBILE";
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: component.id,
-  });
-  return (
-    <div
-      ref={setNodeRef}
-      id={`builder-component-${component.id}`}
-      className={`scroll-mt-24 scroll-mb-80 group relative min-w-0 border-2 transition-colors ${selected ? "border-pink-600" : "border-transparent hover:border-pink-300"} ${component.enabled ? "" : "opacity-45"} ${device === "MOBILE" || component.width === "FULL" ? "col-span-12" : component.width === "TWO_THIRDS" ? "col-span-8" : component.width === "HALF" ? "col-span-6" : "col-span-4"}`}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : undefined,
-      }}
-    >
-      {component.type !== "CATALOG" && component.type !== "MENU" && (
-        <button
-          type="button"
-          aria-label={`Edit ${component.type.toLowerCase()} component`}
-          className="absolute inset-0 z-10 cursor-pointer"
-          onClick={onSelect}
-        />
-      )}
-      <div className="absolute right-2 top-2 z-20 hidden items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-lg group-hover:flex group-focus-within:flex">
-        <button
-          type="button"
-          aria-label={`Edit ${component.type.toLowerCase()} content`}
-          className="rounded-lg p-2 hover:bg-pink-50"
-          onClick={onSelect}
-        >
-          <Icon icon="solar:pen-linear" />
-        </button>
-        <button
-          type="button"
-          aria-label={`Move ${component.type}`}
-          className="cursor-grab rounded-lg p-2 hover:bg-pink-50"
-          {...attributes}
-          {...listeners}
-        >
-          <Icon icon="solar:hamburger-menu-linear" />
-        </button>
-        <button
-          type="button"
-          aria-label={component.enabled ? "Hide component" : "Show component"}
-          className="rounded-lg p-2 hover:bg-pink-50"
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggle();
-          }}
-        >
-          <Icon icon={component.enabled ? "solar:eye-linear" : "solar:eye-closed-linear"} />
-        </button>
-        <button
-          type="button"
-          aria-label="Duplicate component"
-          className="rounded-lg p-2 hover:bg-pink-50"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDuplicate();
-          }}
-        >
-          <Icon icon="solar:copy-linear" />
-        </button>
-        <button
-          type="button"
-          aria-label="Remove component"
-          className="rounded-lg p-2 text-red-600 hover:bg-red-50"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRemove();
-          }}
-        >
-          <Icon icon="solar:trash-bin-trash-linear" />
-        </button>
-      </div>
-      <LandingPageComponentView
-        component={component}
-        menuItems={menuItems}
-        catalogItems={catalogItems}
-        theme={variant.theme}
-        previewDevice={device}
-        inSection
-      />
-    </div>
-  );
+type DialogState = {
+  kind: "new" | "duplicate" | "rename" | "reset" | "delete" | "template" | "settings";
+  template?: LandingTemplate;
+};
+function documentBody(d: LandingPageVariant) {
+  return {
+    name: d.name,
+    schemaVersion: d.schemaVersion,
+    template: d.template,
+    goal: d.goal,
+    theme: d.theme,
+    commerce: d.commerce,
+    sections: d.sections,
+  };
 }
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      <div className="mt-1">{children}</div>
-    </div>
-  );
-}
-
-const textAreaClass =
-  "min-h-24 w-full resize-y rounded-xl border border-pink-100 bg-white px-3 py-2 text-sm outline-none focus:border-pink-600 focus:ring-3 focus:ring-pink-600/10";
-
-function ComponentSettings({
-  component,
-  onChange,
-  onEditContent,
-  sections,
-  onAssignSection,
-}: {
-  component?: LandingPageComponent;
-  onChange: (component: LandingPageComponent) => void;
-  onEditContent: () => void;
-  sections: LandingPageSection[];
-  onAssignSection: (sectionId: string) => void;
-}) {
-  if (!component)
-    return (
-      <div className="rounded-2xl border border-dashed border-pink-200 p-5 text-center text-sm text-stone-500">
-        Select a component in the preview to edit its content and layout.
-      </div>
-    );
-  const replaceContent = (content: LandingPageComponent["content"]) =>
-    onChange({ ...component, content } as LandingPageComponent);
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-pink-700">
-            Selected component
-          </p>
-          <h3 className="font-display text-xl font-semibold">
-            {component.type.replaceAll("_", " ")}
-          </h3>
-        </div>
-        <Icon
-          icon={
-            componentChoices.find((item) => item.type === component.type)?.icon ??
-            "solar:widget-linear"
-          }
-          className="size-7 text-pink-300"
-        />
-      </div>
-      <Field label="Section">
-        <Select
-          value={
-            sections.find((section) => section.components.some((item) => item.id === component.id))
-              ?.id
-          }
-          onValueChange={onAssignSection}
-          disabled={sections.length < 2}
-        >
-          <SelectTrigger aria-label="Assign component to section">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {sections.map((section, index) => (
-              <SelectItem key={section.id} value={section.id}>
-                {index + 1}. {section.name}
-                {section.enabled ? "" : " (hidden)"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="mt-2 text-xs text-stone-500">
-          Choose a section to move this component to the end of that section.
-        </p>
-      </Field>
-      {["HERO", "MENU", "CATALOG", "CTA"].includes(component.type) && (
-        <Field label="Button text color">
-          <Input
-            type="color"
-            aria-label="Button text color"
-            value={component.buttonTextColor || "#ffffff"}
-            onChange={(event) => onChange({ ...component, buttonTextColor: event.target.value })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!component.buttonTextColor}
-            onClick={() => onChange({ ...component, buttonTextColor: "" })}
-          >
-            Use automatic contrast
-          </Button>
-          <p className="text-xs text-stone-500">Applies only to this component.</p>
-        </Field>
-      )}
-      <Field label="Width">
-        <Select
-          value={component.width}
-          onValueChange={(value) =>
-            onChange({ ...component, width: value as LandingPageComponent["width"] })
-          }
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {["FULL", "TWO_THIRDS", "HALF", "THIRD"].map((value) => (
-              <SelectItem key={value} value={value}>
-                {value.replace("_", " ")}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Button type="button" className="w-full" onClick={onEditContent}>
-        <Icon icon="solar:pen-linear" /> Edit content
-      </Button>
-      {component.type === "TEXT" && (
-        <Field label="Alignment">
-          <Select
-            value={component.content.alignment}
-            onValueChange={(value) =>
-              replaceContent({ ...component.content, alignment: value as "LEFT" | "CENTER" })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="LEFT">Left</SelectItem>
-              <SelectItem value="CENTER">Center</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-      )}
-      {(component.type === "MENU" ||
-        component.type === "CATALOG" ||
-        component.type === "GALLERY") && (
-        <Field label="Columns">
-          <Select
-            value={String(component.content.columns)}
-            onValueChange={(value) =>
-              replaceContent({ ...component.content, columns: Number(value) as 2 | 3 | 4 })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[2, 3, 4].map((value) => (
-                <SelectItem key={value} value={String(value)}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      )}
-      {component.type === "MENU" && (
-        <p className="text-sm text-stone-500">
-          All menu items set to show on the landing page appear automatically in horizontal category
-          rows. Manage visibility on the Menu page.
-        </p>
-      )}
-      {component.type === "CATALOG" && (
-        <p className="text-sm text-stone-500">
-          All active catalog items appear automatically, grouped into horizontal category rows.
-          Manage item visibility on the Product catalog page.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function sectionWidthClass(section: LandingPageSection) {
-  if (section.contentWidth === "FULL") return "max-w-none";
-  if (section.contentWidth === "CONTAINED") return "mx-auto max-w-5xl";
-  return "mx-auto max-w-7xl";
-}
-
-function sectionPaddingClass(section: LandingPageSection) {
-  if (section.padding === "NONE") return "";
-  if (section.padding === "SMALL") return "px-4 py-5 sm:px-6";
-  if (section.padding === "LARGE") return "px-6 py-16 sm:px-10";
-  return "px-5 py-10 sm:px-8";
-}
-
-function sectionGapClass(section: LandingPageSection) {
-  if (section.gap === "NONE") return "gap-0";
-  if (section.gap === "SMALL") return "gap-3";
-  if (section.gap === "LARGE") return "gap-10";
-  return "gap-6";
-}
-
-function SectionSettings({
-  section,
-  theme,
-  onChange,
-}: {
-  section?: LandingPageSection;
-  theme: LandingPageVariant["theme"];
-  onChange: (section: LandingPageSection) => void;
-}) {
-  if (!section)
-    return (
-      <div className="rounded-2xl border border-dashed border-pink-200 p-5 text-center text-sm text-stone-500">
-        Select a section or component in the preview to edit its layout.
-      </div>
-    );
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-pink-700">
-            Selected section
-          </p>
-          <h3 className="font-display text-xl font-semibold">{section.name}</h3>
-        </div>
-        <Icon icon="solar:layers-minimalistic-linear" className="size-7 text-pink-300" />
-      </div>
-      <Field label="Section name">
-        <Input
-          value={section.name}
-          onChange={(event) => onChange({ ...section, name: event.target.value })}
-        />
-      </Field>
-      <Field label="Maximum section height (px)">
-        <Input
-          type="number"
-          aria-label="Maximum section height (px)"
-          min={0}
-          max={3000}
-          step={1}
-          placeholder="Unlimited"
-          value={section.maxHeight || ""}
-          onChange={(event) => {
-            const value = event.target.valueAsNumber;
-            onChange({
-              ...section,
-              maxHeight: Number.isFinite(value)
-                ? Math.min(3000, Math.max(0, Math.round(value)))
-                : 0,
-            });
-          }}
-        />
-        <p className="mt-2 text-xs text-stone-500">
-          Leave blank or enter 0 for unlimited height. Taller content scrolls inside the section.
-          Maximum: 3,000 px.
-        </p>
-      </Field>
-      <Field label="Content width">
-        <Select
-          value={section.contentWidth}
-          onValueChange={(value) =>
-            onChange({
-              ...section,
-              contentWidth: value as LandingPageSection["contentWidth"],
-            })
-          }
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="FULL">Full</SelectItem>
-            <SelectItem value="WIDE">Wide</SelectItem>
-            <SelectItem value="CONTAINED">Contained</SelectItem>
-          </SelectContent>
-        </Select>
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Padding">
-          <Select
-            value={section.padding}
-            onValueChange={(value) =>
-              onChange({ ...section, padding: value as LandingPageSection["padding"] })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {["NONE", "SMALL", "MEDIUM", "LARGE"].map((value) => (
-                <SelectItem key={value} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Component gap">
-          <Select
-            value={section.gap}
-            onValueChange={(value) =>
-              onChange({ ...section, gap: value as LandingPageSection["gap"] })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {["NONE", "SMALL", "MEDIUM", "LARGE"].map((value) => (
-                <SelectItem key={value} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Background">
-          <input
-            type="color"
-            className="h-10 w-full rounded-lg"
-            value={section.backgroundColor || theme.backgroundColor}
-            onChange={(event) => onChange({ ...section, backgroundColor: event.target.value })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mt-1 w-full"
-            disabled={!section.backgroundColor}
-            onClick={() => onChange({ ...section, backgroundColor: "" })}
-          >
-            Use page color
-          </Button>
-        </Field>
-        <Field label="Text">
-          <input
-            type="color"
-            className="h-10 w-full rounded-lg"
-            value={section.textColor || theme.textColor}
-            onChange={(event) => onChange({ ...section, textColor: event.target.value })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mt-1 w-full"
-            disabled={!section.textColor}
-            onClick={() => onChange({ ...section, textColor: "" })}
-          >
-            Use page color
-          </Button>
-        </Field>
-      </div>
-    </div>
-  );
-}
-
-function SortableSection({
-  section,
-  variant,
-  menuItems,
-  catalogItems,
-  selectedSectionId,
-  selectedComponentId,
-  device,
-  onSelectSection,
-  onSelectComponent,
-  onUpdateComponent,
-  onDuplicateComponent,
-  onRemoveComponent,
-  onToggle,
-  onDuplicate,
-  onRemove,
-}: {
-  section: LandingPageSection;
-  variant: LandingPageVariant;
-  menuItems: LandingPageBuilderData["menuItems"];
-  catalogItems: LandingPageBuilderData["catalogItems"];
-  selectedSectionId?: string;
-  selectedComponentId?: string;
-  device: "DESKTOP" | "TABLET" | "MOBILE";
-  onSelectSection: () => void;
-  onSelectComponent: (componentId: string) => void;
-  onUpdateComponent: (component: LandingPageComponent) => void;
-  onDuplicateComponent: (component: LandingPageComponent) => void;
-  onRemoveComponent: (component: LandingPageComponent) => void;
-  onToggle: () => void;
-  onDuplicate: () => void;
-  onRemove: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `section:${section.id}`,
-  });
-  const { setNodeRef: setAreaRef, isOver } = useDroppable({ id: `section-area:${section.id}` });
-  return (
-    <div
-      ref={setNodeRef}
-      id={`builder-section-${section.id}`}
-      className={`scroll-mt-24 relative border-2 transition-colors ${selectedSectionId === section.id ? "border-pink-500" : "border-transparent hover:border-pink-200"} ${section.enabled ? "" : "opacity-45"}`}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : undefined,
-      }}
-    >
-      <div className="flex items-center gap-2 border-b border-pink-100 bg-pink-50/95 px-3 py-2 text-xs text-stone-600">
-        <button
-          type="button"
-          className="cursor-grab rounded-lg p-1.5 hover:bg-white"
-          aria-label={`Move ${section.name} section`}
-          {...attributes}
-          {...listeners}
-        >
-          <Icon icon="solar:hamburger-menu-linear" />
-        </button>
-        <button
-          type="button"
-          className="min-w-0 flex-1 truncate text-left font-bold"
-          onClick={onSelectSection}
-        >
-          {section.name}
-        </button>
-        <span>{section.components.length} components</span>
-        <button
-          type="button"
-          className="rounded-lg p-1.5 hover:bg-white"
-          aria-label={section.enabled ? "Hide section" : "Show section"}
-          onClick={onToggle}
-        >
-          <Icon icon={section.enabled ? "solar:eye-linear" : "solar:eye-closed-linear"} />
-        </button>
-        <button
-          type="button"
-          className="rounded-lg p-1.5 hover:bg-white"
-          aria-label="Duplicate section"
-          onClick={onDuplicate}
-        >
-          <Icon icon="solar:copy-linear" />
-        </button>
-        <button
-          type="button"
-          className="rounded-lg p-1.5 text-red-600 hover:bg-red-50"
-          aria-label="Remove section"
-          onClick={onRemove}
-        >
-          <Icon icon="solar:trash-bin-trash-linear" />
-        </button>
-      </div>
-      <div
-        ref={setAreaRef}
-        className={`${isOver ? "ring-4 ring-inset ring-pink-300/60" : ""}`}
-        style={{
-          ...sectionScrollStyle(section),
-          background: section.backgroundColor || variant.theme.backgroundColor,
-          color: section.textColor || variant.theme.textColor,
-        }}
-      >
-        <div className={`${sectionWidthClass(section)} ${sectionPaddingClass(section)}`}>
-          <SortableContext
-            items={section.components.map((component) => component.id)}
-            strategy={rectSortingStrategy}
-          >
-            <div className={`grid min-h-20 grid-cols-12 ${sectionGapClass(section)}`}>
-              {section.components.map((component) => (
-                <SortableComponent
-                  key={component.id}
-                  component={component}
-                  variant={variant}
-                  menuItems={menuItems}
-                  catalogItems={catalogItems}
-                  selected={selectedComponentId === component.id}
-                  onSelect={() => onSelectComponent(component.id)}
-                  onToggle={() => onUpdateComponent({ ...component, enabled: !component.enabled })}
-                  onDuplicate={() => onDuplicateComponent(component)}
-                  onRemove={() => onRemoveComponent(component)}
-                  device={device}
-                />
-              ))}
-              {!section.components.length && (
-                <button
-                  type="button"
-                  className="col-span-12 grid min-h-28 place-items-center rounded-xl border-2 border-dashed border-pink-200 bg-white/60 p-4 text-sm font-semibold text-stone-400"
-                  onClick={onSelectSection}
-                >
-                  Drop or add components to {section.name}
-                </button>
-              )}
-            </div>
-          </SortableContext>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function LandingPageBuilderPage() {
   const queryClient = useQueryClient();
-  const [variantId, setVariantId] = useState("");
   const [draft, setDraft] = useState<LandingPageVariant>();
-  const [selectedSectionId, setSelectedSectionId] = useState<string>();
-  const [selectedComponentId, setSelectedComponentId] = useState<string>();
-  const [contentEditor, setContentEditor] = useState<LandingPageComponent>();
-  const [device, setDevice] = useState<"DESKTOP" | "TABLET" | "MOBILE">("DESKTOP");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [commerceSettingsOpen, setCommerceSettingsOpen] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const editingLocked = useRef(false);
-  const [activePaletteType, setActivePaletteType] = useState<LandingPageComponentType>();
-  const [addedComponentId, setAddedComponentId] = useState<string>();
-  const undoStack = useRef<LandingPageVariant[]>([]);
-  const redoStack = useRef<LandingPageVariant[]>([]);
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
+  const latest = useRef(draft);
+  latest.current = draft;
+  const [sectionId, setSectionId] = useState<string>();
+  const [blockId, setBlockId] = useState<string>();
+  const [leftTab, setLeftTab] = useState<"Sections" | "Add" | "Templates">("Sections");
+  const [inspector, setInspector] = useState<"Selection" | "Theme" | "Commerce">("Selection");
+  const [width, setWidth] = useState(1440);
+  const [preview, setPreview] = useState(false);
+  const [motionOff, setMotionOff] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dialog, setDialog] = useState<DialogState>();
+  const [name, setName] = useState("");
+  const [goal, setGoal] = useState<LandingGoal>("SHOP");
+  const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
+  const [mutationError, setMutationError] = useState("");
+  const undo = useRef<LandingPageVariant[]>([]);
+  const redo = useRef<LandingPageVariant[]>([]);
+  const canEdit = canAccess(sessionUserStore.get(), "landing-page", "edit");
+  const canCreate = canAccess(sessionUserStore.get(), "landing-page", "create");
+  const canDelete = canAccess(sessionUserStore.get(), "landing-page", "delete");
   const builder = useQuery({
     queryKey: ["landing-page-builder"],
     queryFn: async () => {
-      const data = await api<LandingPageBuilderPayload>("/landing-page");
+      const data = await api<Payload>("/landing-page");
       return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
     },
   });
-  const autosave = useDraftAutosave(async (variant: LandingPageVariant) => {
+  const templates = useQuery({
+    queryKey: ["landing-page-templates"],
+    queryFn: () =>
+      api<{ templates: LandingTemplate[]; schemaVersion: number }>("/landing-page/templates"),
+  });
+  const autosave = useDraftAutosave(async (doc: LandingPageVariant) => {
+    const parsed = v.safeParse(landingPageVariantUpdateSchema, documentBody(doc));
+    if (!parsed.success)
+      throw new Error(
+        parsed.issues[0]?.message ?? "Complete the required fields before this draft can save",
+      );
     const saved = normalizeLandingPageVariant(
-      await api<LandingPageVariantPayload>(`/landing-page/variants/${variant._id}`, {
+      await api<LandingPageVariantPayload>(`/landing-page/variants/${doc._id}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          name: variant.name,
-          theme: variant.theme,
-          commerce: variant.commerce,
-          sections: variant.sections,
-        }),
+        body: JSON.stringify(parsed.output),
       }),
     );
     queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
       current
-        ? {
-            ...current,
-            variants: current.variants.map((item) => (item._id === saved._id ? saved : item)),
-          }
+        ? { ...current, variants: current.variants.map((x) => (x._id === saved._id ? saved : x)) }
         : current,
     );
   });
+  const selectDraft = useCallback((doc: LandingPageVariant) => {
+    setDraft(structuredClone(doc));
+    setSectionId(doc.sections[0]?.id);
+    setBlockId(undefined);
+    undo.current = [];
+    redo.current = [];
+  }, []);
   useEffect(() => {
-    if (!builder.data?.variants.length || draft) return;
-    const first = builder.data.variants[0];
-    if (!first) return;
-    setVariantId(first._id);
-    setDraft(structuredClone(first));
-    setSelectedSectionId(first.sections[0]?.id);
-  }, [builder.data, draft]);
-
-  useEffect(() => {
-    if (!addedComponentId) return;
-    const frame = requestAnimationFrame(() => {
-      document.getElementById(`builder-component-${addedComponentId}`)?.scrollIntoView({
-        block: "center",
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "instant"
-          : "smooth",
-      });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [addedComponentId]);
-
+    if (draft || !builder.data?.variants.length) return;
+    selectDraft(builder.data.variants[0]!);
+  }, [builder.data, draft, selectDraft]);
   function commit(next: LandingPageVariant) {
-    if (editingLocked.current) return;
-    if (draft) undoStack.current = [...undoStack.current, structuredClone(draft)].slice(-100);
-    redoStack.current = [];
+    if (locked.current || !canEdit) return;
+    if (next.schemaVersion === 2) {
+      const visible = next.sections
+        .filter((s) => s.enabled)
+        .flatMap((s) => s.components.filter((c) => c.enabled));
+      if (
+        visible.filter((c) => c.type === "HEADER").length > 1 ||
+        visible.filter((c) => c.type === "FOOTER").length > 1 ||
+        (visible.some((c) => c.type === "HEADER") && visible[0]?.type !== "HEADER") ||
+        (visible.some((c) => c.type === "FOOTER") && visible.at(-1)?.type !== "FOOTER")
+      )
+        return toast.error(
+          "Keep one header first and one footer last. Move the other sections between them.",
+        );
+      if (visible.filter((c) => c.appearance?.orderPresentation === "INLINE_SUMMARY").length > 1)
+        return toast.error(
+          "Use one inline order summary. Change the other catalog to the default ordering layout.",
+        );
+      if (
+        next.commerce.contactBlockId &&
+        !visible.some((c) => c.type === "CONTACT" && c.id === next.commerce.contactBlockId)
+      )
+        next = { ...next, commerce: { ...next.commerce, contactBlockId: undefined } };
+    }
+    const current = latest.current;
+    if (current && JSON.stringify(current) === JSON.stringify(next)) return;
+    if (current) undo.current = [...undo.current, structuredClone(current)].slice(-100);
+    redo.current = [];
+    latest.current = next;
     setDraft(next);
     autosave.schedule(next);
   }
-  function undo() {
-    if (editingLocked.current) return;
-    const previous = undoStack.current.pop();
-    if (!previous || !draft) return;
-    redoStack.current.push(structuredClone(draft));
-    setDraft(previous);
-    autosave.schedule(previous);
-  }
-  function redo() {
-    if (editingLocked.current) return;
-    const next = redoStack.current.pop();
-    if (!next || !draft) return;
-    undoStack.current.push(structuredClone(draft));
+  function history(direction: "undo" | "redo") {
+    if (locked.current || !latest.current || !canEdit) return;
+    const source = direction === "undo" ? undo : redo;
+    const destination = direction === "undo" ? redo : undo;
+    const next = source.current.pop();
+    if (!next) return;
+    destination.current.push(structuredClone(latest.current));
+    latest.current = next;
     setDraft(next);
     autosave.schedule(next);
   }
-  async function chooseVariant(id: string) {
-    if (editingLocked.current || id === variantId) return;
-    editingLocked.current = true;
-    setSwitching(true);
+  const historyHandler = useRef(history);
+  historyHandler.current = history;
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.isComposing || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z")
+        return;
+      const target = event.target as HTMLElement;
+      if (target.closest("input,textarea,select,[contenteditable=true]")) return;
+      event.preventDefault();
+      historyHandler.current(event.shiftKey ? "redo" : "undo");
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+  async function mutate(task: () => Promise<void>, discard = false) {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setMutationError("");
     try {
-      if (!(await autosave.flush())) return;
-      const next = queryClient
-        .getQueryData<LandingPageBuilderData>(["landing-page-builder"])
-        ?.variants.find((variant) => variant._id === id);
-      if (!next) return;
-      setVariantId(id);
-      setDraft(structuredClone(next));
-      setSelectedSectionId(next.sections[0]?.id);
-      setSelectedComponentId(undefined);
-      setContentEditor(undefined);
-      undoStack.current = [];
-      redoStack.current = [];
+      if (discard) await autosave.discard();
+      else if (!(await autosave.flush()))
+        throw new Error("Fix the draft save error before continuing");
+      await task();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "This action failed";
+      setMutationError(message);
+      toast.error(message);
+      if (discard && latest.current) autosave.schedule(latest.current);
     } finally {
-      editingLocked.current = false;
-      setSwitching(false);
+      locked.current = false;
+      setBusy(false);
     }
   }
-  function updateComponent(component: LandingPageComponent) {
+  async function refresh() {
+    await queryClient.invalidateQueries({ queryKey: ["landing-page-builder"] });
+  }
+  function updateBlock(next: LandingPageComponent) {
     if (!draft) return;
     commit({
       ...draft,
-      sections: draft.sections.map((section) => ({
-        ...section,
-        components: section.components.map((item) => (item.id === component.id ? component : item)),
+      sections: draft.sections.map((s) => ({
+        ...s,
+        components: s.components.map((c) => (c.id === next.id ? next : c)),
       })),
     });
   }
-  function assignComponentToSection(componentId: string, sectionId: string) {
-    if (!draft) return;
-    const source = draft.sections.find((section) =>
-      section.components.some((item) => item.id === componentId),
+  function updateSection(next: LandingPageSection) {
+    if (draft)
+      commit({ ...draft, sections: draft.sections.map((s) => (s.id === next.id ? next : s)) });
+  }
+  function select(section: string, block?: string) {
+    setSectionId(section);
+    setBlockId(block);
+    setInspector("Selection");
+    setRightOpen(true);
+  }
+  function focusTree() {
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLButtonElement>(".lb-tree-selected .lb-tree-label")?.focus(),
     );
-    const target = draft.sections.find((section) => section.id === sectionId);
-    const component = source?.components.find((item) => item.id === componentId);
-    if (!source || !target || !component || source.id === target.id) return;
-    commit({
-      ...draft,
-      sections: draft.sections.map((section) => {
-        if (section.id === source.id)
-          return {
-            ...section,
-            components: section.components.filter((item) => item.id !== componentId),
-          };
-        if (section.id === target.id)
-          return { ...section, components: [...section.components, component] };
-        return section;
-      }),
-    });
-    setSelectedSectionId(target.id);
-    setSelectedComponentId(componentId);
   }
-  function updateSection(section: LandingPageSection) {
+  const count = draft?.sections.reduce((n, s) => n + s.components.length, 0) ?? 0;
+  function sectionAction(
+    id: string,
+    action: "toggle" | "duplicate" | "delete" | "move",
+    direction = 0,
+  ) {
     if (!draft) return;
-    commit({
-      ...draft,
-      sections: draft.sections.map((item) => (item.id === section.id ? section : item)),
-    });
+    const index = draft.sections.findIndex((s) => s.id === id);
+    const s = draft.sections[index];
+    if (!s) return;
+    let sections = draft.sections;
+    if (action === "toggle")
+      sections = sections.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x));
+    if (action === "move")
+      sections = arrayMove(
+        sections,
+        index,
+        Math.max(0, Math.min(sections.length - 1, index + direction)),
+      );
+    if (action === "duplicate") {
+      if (sections.length >= 20 || count + s.components.length > 30)
+        return toast.error("This copy would exceed the document limits");
+      if (s.components.some((c) => c.type === "HEADER" || c.type === "FOOTER"))
+        return toast.error("Keep one header and one footer");
+      const copy = {
+        ...structuredClone(s),
+        id: crypto.randomUUID(),
+        anchor: undefined,
+        name: `${s.name} copy`.slice(0, 80),
+        components: s.components.map((c) => ({
+          ...structuredClone(c),
+          id: crypto.randomUUID(),
+          appearance: c.appearance
+            ? {
+                ...c.appearance,
+                orderPresentation:
+                  c.appearance.orderPresentation === "INLINE_SUMMARY"
+                    ? ("DEFAULT" as const)
+                    : c.appearance.orderPresentation,
+              }
+            : undefined,
+        })),
+      };
+      sections = [...sections.slice(0, index + 1), copy, ...sections.slice(index + 1)];
+      setSectionId(copy.id);
+      setBlockId(undefined);
+    }
+    if (action === "delete") {
+      if (count - s.components.length < 1)
+        return toast.error("Keep at least one block in the page");
+      if (sections.length === 1) return toast.error("Keep at least one section");
+      sections = sections.filter((x) => x.id !== id);
+      setSectionId(sections[Math.min(index, sections.length - 1)]?.id);
+      setBlockId(undefined);
+    }
+    commit({ ...draft, sections });
+    focusTree();
   }
-  function componentCount(variant = draft) {
-    return variant?.sections.reduce((count, section) => count + section.components.length, 0) ?? 0;
-  }
-  function resolveSectionId(dropId: string) {
-    if (!draft) return undefined;
-    if (dropId.startsWith("section-area:")) return dropId.replace("section-area:", "");
-    if (dropId.startsWith("section:")) return dropId.replace("section:", "");
-    return draft.sections.find((section) =>
-      section.components.some((component) => component.id === dropId),
-    )?.id;
-  }
-  function addComponent(type: LandingPageComponentType, requestedSectionId?: string) {
+  function blockAction(
+    sid: string,
+    id: string,
+    action: "toggle" | "duplicate" | "delete" | "move",
+    direction = 0,
+  ) {
     if (!draft) return;
-    if (componentCount() >= 30) return toast.error("Use no more than 30 components");
-    const sectionId = requestedSectionId ?? selectedSectionId ?? draft.sections[0]?.id;
-    if (!sectionId) return;
-    const component = createLandingComponent(type);
-    commit({
-      ...draft,
-      sections: draft.sections.map((section) =>
-        section.id === sectionId
-          ? { ...section, components: [...section.components, component] }
-          : section,
-      ),
-    });
-    setSelectedSectionId(sectionId);
-    setSelectedComponentId(component.id);
-    setAddedComponentId(component.id);
+    const section = draft.sections.find((s) => s.id === sid);
+    const index = section?.components.findIndex((c) => c.id === id) ?? -1;
+    const block = section?.components[index];
+    if (!section || !block) return;
+    let components = section.components;
+    if (action === "toggle")
+      components = components.map((c) => (c.id === id ? { ...c, enabled: !c.enabled } : c));
+    if (action === "move")
+      components = arrayMove(
+        components,
+        index,
+        Math.max(0, Math.min(components.length - 1, index + direction)),
+      );
+    if (action === "duplicate") {
+      if (count >= 30) return toast.error("Use no more than 30 blocks");
+      if (block.type === "HEADER" || block.type === "FOOTER")
+        return toast.error("Keep one header and one footer");
+      const copy = {
+        ...structuredClone(block),
+        id: crypto.randomUUID(),
+        appearance: block.appearance
+          ? {
+              ...block.appearance,
+              orderPresentation:
+                block.appearance.orderPresentation === "INLINE_SUMMARY"
+                  ? ("DEFAULT" as const)
+                  : block.appearance.orderPresentation,
+            }
+          : undefined,
+      };
+      components = [...components.slice(0, index + 1), copy, ...components.slice(index + 1)];
+      setBlockId(copy.id);
+    }
+    if (action === "delete") {
+      if (count <= 1) return toast.error("Keep at least one block in the page");
+      components = components.filter((c) => c.id !== id);
+      setBlockId(components[Math.min(index, components.length - 1)]?.id);
+    }
+    updateSection({ ...section, components });
+    focusTree();
   }
-  function onDragEnd(event: DragEndEvent) {
-    setActivePaletteType(undefined);
+  function drag(event: DragEndEvent) {
     if (!draft || !event.over) return;
-    const activeId = String(event.active.id);
-    const overId = String(event.over.id);
-    const targetSectionId = resolveSectionId(overId);
-    if (activeId.startsWith("section:")) {
-      const sectionId = activeId.replace("section:", "");
-      if (!targetSectionId || sectionId === targetSectionId) return;
-      const oldIndex = draft.sections.findIndex((section) => section.id === sectionId);
-      const newIndex = draft.sections.findIndex((section) => section.id === targetSectionId);
-      if (oldIndex >= 0 && newIndex >= 0)
-        commit({ ...draft, sections: arrayMove(draft.sections, oldIndex, newIndex) });
+    const active = String(event.active.id),
+      over = String(event.over.id);
+    if (active === over) return;
+    if (active.startsWith("section:") && over.startsWith("section:")) {
+      const from = draft.sections.findIndex((s) => s.id === active.slice(8)),
+        to = draft.sections.findIndex((s) => s.id === over.slice(8));
+      if (from >= 0 && to >= 0) commit({ ...draft, sections: arrayMove(draft.sections, from, to) });
       return;
     }
-    if (activeId.startsWith("palette:")) {
-      if (componentCount() >= 30) return toast.error("Use no more than 30 components");
-      const type = event.active.data.current?.componentType as LandingPageComponentType | undefined;
-      if (!type || !componentChoices.some((choice) => choice.type === type) || !targetSectionId)
-        return;
-      const component = createLandingComponent(type);
-      const sectionId = targetSectionId;
+    const from = draft.sections.find((s) => s.components.some((c) => c.id === active));
+    const to = draft.sections.find(
+      (s) => s.components.some((c) => c.id === over) || `section:${s.id}` === over,
+    );
+    const block = from?.components.find((c) => c.id === active);
+    if (!from || !to || !block) return;
+    if (from.id === to.id) {
+      const a = from.components.findIndex((c) => c.id === active),
+        b = from.components.findIndex((c) => c.id === over);
+      if (b >= 0) updateSection({ ...from, components: arrayMove(from.components, a, b) });
+    } else
       commit({
         ...draft,
-        sections: draft.sections.map((section) => {
-          if (section.id !== sectionId) return section;
-          const index = section.components.findIndex((item) => item.id === overId);
-          const components = [...section.components];
-          components.splice(index >= 0 ? index : components.length, 0, component);
-          return { ...section, components };
-        }),
+        sections: draft.sections.map((s) =>
+          s.id === from.id
+            ? { ...s, components: s.components.filter((c) => c.id !== active) }
+            : s.id === to.id
+              ? { ...s, components: [...s.components, block] }
+              : s,
+        ),
       });
-      setSelectedSectionId(sectionId);
-      setSelectedComponentId(component.id);
-      setAddedComponentId(component.id);
-      return;
-    }
-    if (activeId === overId) return;
-    const sourceSection = draft.sections.find((section) =>
-      section.components.some((component) => component.id === activeId),
-    );
-    if (!sourceSection || !targetSectionId) return;
-    if (sourceSection.id === targetSectionId) {
-      const oldIndex = sourceSection.components.findIndex((item) => item.id === activeId);
-      const overIndex = sourceSection.components.findIndex((item) => item.id === overId);
-      const newIndex = overIndex >= 0 ? overIndex : sourceSection.components.length - 1;
-      if (oldIndex >= 0 && oldIndex !== newIndex)
-        commit({
-          ...draft,
-          sections: draft.sections.map((section) =>
-            section.id === sourceSection.id
-              ? { ...section, components: arrayMove(section.components, oldIndex, newIndex) }
-              : section,
-          ),
-        });
-      return;
-    }
-    const moving = sourceSection.components.find((component) => component.id === activeId);
-    if (!moving) return;
-    commit({
-      ...draft,
-      sections: draft.sections.map((section) => {
-        if (section.id === sourceSection.id)
-          return {
-            ...section,
-            components: section.components.filter((component) => component.id !== activeId),
-          };
-        if (section.id !== targetSectionId) return section;
-        const index = section.components.findIndex((component) => component.id === overId);
-        const components = [...section.components];
-        components.splice(index >= 0 ? index : components.length, 0, moving);
-        return { ...section, components };
-      }),
-    });
-    setSelectedSectionId(targetSectionId);
   }
-
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["landing-page-builder"] });
-  const initialize = useMutation({
-    mutationFn: async () => {
-      const data = await api<LandingPageBuilderPayload>("/landing-page", { method: "POST" });
-      return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(["landing-page-builder"], data);
-      toast.success("Landing-page builder created");
-    },
-    onError: (error) => toast.error(error.message),
-  });
-  const publish = useMutation({
-    onMutate: () => {
-      editingLocked.current = true;
-    },
-    mutationFn: async (variant: LandingPageVariant) => {
-      if (!(await autosave.flush())) throw new Error("Fix the draft save error before publishing");
-      return api(`/landing-page/variants/${variant._id}/publish`, { method: "POST" });
-    },
-    onSuccess: () => {
-      void refresh();
-      toast.success("Landing page published", {
-        description: getPublicSiteUrl(builder.data?.page?.slug ?? ""),
-      });
-    },
-    onError: (error) => toast.error(error.message),
-    onSettled: () => {
-      editingLocked.current = false;
-    },
-  });
-  const unpublish = useMutation({
-    mutationFn: () => api("/landing-page/unpublish", { method: "POST" }),
-    onSuccess: () => {
-      void refresh();
-      toast.success("Landing page unpublished");
-    },
-    onError: (error) => toast.error(error.message),
-  });
-  const createVariant = useMutation({
-    onMutate: () => {
-      editingLocked.current = true;
-    },
-    mutationFn: async ({ name, source }: { name: string; source?: string }) => {
-      if (!(await autosave.flush()))
-        throw new Error("Fix the draft save error before changing variants");
-      const created = await api<LandingPageVariantPayload>("/landing-page/variants", {
-        method: "POST",
-        body: JSON.stringify({ name, duplicateFromId: source }),
-      });
-      return normalizeLandingPageVariant(created);
-    },
-    onSuccess: (created) => {
-      void refresh();
-      setVariantId(created._id);
-      setDraft(structuredClone(created));
-      setSelectedSectionId(created.sections[0]?.id);
-      setSelectedComponentId(undefined);
-      undoStack.current = [];
-      redoStack.current = [];
-      setContentEditor(undefined);
-      toast.success("Variant created");
-    },
-    onError: (error) => toast.error(error.message),
-    onSettled: () => {
-      editingLocked.current = false;
-    },
-  });
-  const removeVariant = useMutation({
-    onMutate: () => {
-      editingLocked.current = true;
-    },
-    mutationFn: async (id: string) => {
-      await autosave.discard();
-      return api<void>(`/landing-page/variants/${id}`, { method: "DELETE" });
-    },
-    onSuccess: (_data, deletedId) => {
-      queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
-        current
-          ? {
-              ...current,
-              variants: current.variants.filter((variant) => variant._id !== deletedId),
-            }
-          : current,
-      );
-      setDraft(undefined);
-      setVariantId("");
-      setSelectedSectionId(undefined);
-      setSelectedComponentId(undefined);
-      undoStack.current = [];
-      redoStack.current = [];
-      setContentEditor(undefined);
-      void refresh();
-      toast.success("Variant deleted");
-    },
-    onError: (error) => {
-      if (draft) autosave.schedule(draft);
-      toast.error(error.message);
-    },
-    onSettled: () => {
-      editingLocked.current = false;
-    },
-  });
-  const resetVariant = useMutation({
-    onMutate: () => {
-      editingLocked.current = true;
-    },
-    mutationFn: async (id: string) => {
-      await autosave.discard();
-      return normalizeLandingPageVariant(
-        await api<LandingPageVariantPayload>(`/landing-page/variants/${id}/reset`, {
-          method: "PATCH",
-        }),
-      );
-    },
-    onSuccess: (reset) => {
-      queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
-        current
-          ? {
-              ...current,
-              variants: current.variants.map((item) => (item._id === reset._id ? reset : item)),
-            }
-          : current,
-      );
-      setDraft(structuredClone(reset));
-      setSelectedSectionId(reset.sections[0]?.id);
-      setSelectedComponentId(undefined);
-      setContentEditor(undefined);
-      setAddedComponentId(undefined);
-      undoStack.current = [];
-      redoStack.current = [];
-      setResetOpen(false);
-      toast.success("Variant reset to the default template");
-    },
-    onError: (error) => {
-      if (draft) autosave.schedule(draft);
-      toast.error(error.message);
-    },
-    onSettled: () => {
-      editingLocked.current = false;
-    },
-  });
-  const saveSettings = useMutation({
-    mutationFn: (payload: unknown) =>
-      api("/landing-page/settings", { method: "PATCH", body: JSON.stringify(payload) }),
-    onSuccess: () => {
-      setSettingsOpen(false);
-      void refresh();
-      toast.success("Page settings saved");
-    },
-    onError: (error) => toast.error(error.message),
-  });
-
+  function add(type: LandingPageComponentType) {
+    if (!draft || count >= 30) return;
+    const block = createLandingComponent(type);
+    const v2 = draft.schemaVersion === 2;
+    if (
+      v2 &&
+      draft.sections.some((s) => s.components.some((c) => c.type === type)) &&
+      (type === "HEADER" || type === "FOOTER")
+    )
+      return toast.error(`Keep one ${type.toLowerCase()}`);
+    let target = draft.sections.find((s) => s.id === sectionId) ?? draft.sections[0];
+    if (!target) return;
+    if (type === "HEADER") target = draft.sections[0]!;
+    if (type === "FOOTER") target = draft.sections.at(-1)!;
+    const section = {
+      ...target,
+      components:
+        type === "HEADER"
+          ? [block, ...target.components]
+          : [
+              ...target.components.filter((c) => c.type !== "FOOTER"),
+              block,
+              ...target.components.filter((c) => c.type === "FOOTER"),
+            ],
+    };
+    updateSection(section);
+    setBlockId(block.id);
+    setSectionId(section.id);
+    setInspector("Selection");
+    setRightOpen(true);
+  }
+  function openDialog(kind: DialogState["kind"], template?: LandingTemplate) {
+    template ??=
+      kind === "new"
+        ? (templates.data?.templates.find((t) => t.id === draft?.template?.id) ??
+          templates.data?.templates[0])
+        : undefined;
+    setMutationError("");
+    setName(
+      kind === "rename"
+        ? (draft?.name ?? "")
+        : kind === "duplicate"
+          ? `${draft?.name ?? "Page"} copy`.slice(0, 80)
+          : (template?.name ?? "New variant"),
+    );
+    setGoal(template?.goal ?? draft?.goal ?? "SHOP");
+    setDialog({ kind, template });
+  }
+  async function submitDialog(event: React.FormEvent) {
+    event.preventDefault();
+    if (!dialog) return;
+    const action = dialog;
+    await mutate(
+      async () => {
+        if (action.kind === "settings") {
+          const data = new FormData(event.target as HTMLFormElement);
+          await api("/landing-page/settings", {
+            method: "PATCH",
+            body: JSON.stringify(Object.fromEntries(data)),
+          });
+        } else if (action.kind === "rename") {
+          if (!draft) return;
+          const next = { ...draft, name: name.trim() };
+          const saved = normalizeLandingPageVariant(
+            await api<LandingPageVariantPayload>(`/landing-page/variants/${draft._id}`, {
+              method: "PATCH",
+              body: JSON.stringify(documentBody(next)),
+            }),
+          );
+          selectDraft(saved);
+        } else if (action.kind === "reset") {
+          if (!draft) return;
+          const saved = normalizeLandingPageVariant(
+            await api<LandingPageVariantPayload>(`/landing-page/variants/${draft._id}/reset`, {
+              method: "PATCH",
+            }),
+          );
+          selectDraft(saved);
+          toast.success("Variant reset");
+        } else if (action.kind === "delete") {
+          if (!draft) return;
+          await api(`/landing-page/variants/${draft._id}`, { method: "DELETE" });
+          const next = builder.data?.variants.find((d) => d._id !== draft._id);
+          if (next) selectDraft(next);
+        } else {
+          const created = normalizeLandingPageVariant(
+            await api<LandingPageVariantPayload>("/landing-page/variants", {
+              method: "POST",
+              body: JSON.stringify({
+                name: name.trim(),
+                ...(action.kind === "duplicate"
+                  ? { duplicateFromId: draft?._id }
+                  : action.template
+                    ? {
+                        templateId: action.template.id,
+                        templateRevision: action.template.revision,
+                        goal,
+                      }
+                    : {}),
+              }),
+            }),
+          );
+          selectDraft(created);
+          toast.success("New draft variant created");
+        }
+        setDialog(undefined);
+        await refresh();
+      },
+      action.kind === "reset" || action.kind === "delete",
+    );
+  }
   if (builder.isLoading) return <PageSkeleton cards={5} />;
   if (builder.isError)
     return <QueryError message={builder.error.message} retry={() => builder.refetch()} />;
   if (!builder.data?.page)
     return (
-      <div className="space-y-6">
-        <Header
-          title="Landing page"
-          description="Build and publish a public page for your business."
-        />
-        <Card className="grid min-h-96 place-items-center p-8 text-center">
-          <div>
-            <Icon icon="solar:palette-round-linear" className="mx-auto size-16 text-pink-300" />
-            <h2 className="mt-4 font-display text-2xl font-semibold">
-              Create your landing-page workspace
-            </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-stone-500">
-              Start with a ready-to-edit layout, then drag components into the live preview.
-            </p>
-            <Button
-              permission={{ path: "/landing-page", method: "POST" }}
-              className="mt-6"
-              onClick={() => initialize.mutate()}
-              disabled={initialize.isPending}
-            >
-              <Icon icon="solar:add-circle-linear" /> Start building
-            </Button>
-          </div>
-        </Card>
+      <div className="lb-start">
+        <Link to="/">← Back to workspace</Link>
+        <Icon icon="solar:palette-round-linear" />
+        <h1>Your next storefront starts here.</h1>
+        <p>Create a workspace, choose a template and make it your own.</p>
+        <Button
+          disabled={busy || !canCreate}
+          onClick={() =>
+            void mutate(async () => {
+              await api("/landing-page", { method: "POST" });
+              await refresh();
+            })
+          }
+        >
+          Start building
+        </Button>
       </div>
     );
   if (!draft) return <PageSkeleton />;
   const page = builder.data.page;
-  const busy =
-    switching ||
-    publish.isPending ||
-    createVariant.isPending ||
-    removeVariant.isPending ||
-    resetVariant.isPending;
-  const selectedSection = draft.sections.find((section) => section.id === selectedSectionId);
-  const selected = draft.sections
-    .flatMap((section) => section.components)
-    .find((item) => item.id === selectedComponentId);
-  const previewWidth =
-    device === "MOBILE" ? "max-w-[390px]" : device === "TABLET" ? "max-w-[760px]" : "max-w-full";
-  const hasOrderableItems = draft.sections.some(
-    (section) =>
-      section.enabled &&
-      section.components.some(
-        (component) =>
-          component.enabled &&
-          ((component.type === "MENU" && (builder.data?.menuItems.length ?? 0) > 0) ||
-            (component.type === "CATALOG" && (builder.data?.catalogItems.length ?? 0) > 0)),
-      ),
+  const section = draft.sections.find((s) => s.id === sectionId);
+  const block = section?.components.find((c) => c.id === blockId);
+  const v2 = draft.schemaVersion === 2;
+  const publishedChanges =
+    page.isPublished &&
+    (page.publishedVariantId !== draft._id ||
+      autosave.status !== "saved" ||
+      Date.parse(builder.data.variants.find((d) => d._id === draft._id)?.updatedAt ?? "") >
+        Date.parse(page.publishedAt ?? ""));
+  const filteredTemplates = (templates.data?.templates ?? []).filter((t) =>
+    `${t.name} ${t.description} ${t.category}`.toLowerCase().includes(search.toLowerCase()),
   );
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={(args) => {
-        if (String(args.active.id).startsWith("palette:") && args.pointerCoordinates) {
-          const toolbar = document
-            .getElementById("floating-component-toolbar")
-            ?.getBoundingClientRect();
-          const { x, y } = args.pointerCoordinates;
-          if (
-            toolbar &&
-            x >= toolbar.left &&
-            x <= toolbar.right &&
-            y >= toolbar.top &&
-            y <= toolbar.bottom
-          )
-            return [];
-        }
-        return rectIntersection(args);
-      }}
-      onDragStart={({ active }) => setActivePaletteType(active.data.current?.componentType)}
-      onDragCancel={() => setActivePaletteType(undefined)}
-      onDragEnd={onDragEnd}
-    >
-      <div className="space-y-5" inert={busy}>
-        <Header
-          title="Landing page builder"
-          description="Changes save automatically as drafts. Publish when ready to update your live page."
-        >
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setSettingsOpen(true)}>
-              <Icon icon="solar:settings-linear" /> Page settings
-            </Button>
-            <Button variant="outline" onClick={() => setCommerceSettingsOpen(true)}>
-              <Icon icon="solar:cart-large-2-linear" /> Cart & checkout
-            </Button>
-            <Button
-              permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
-              onClick={() => publish.mutate(draft)}
-              disabled={publish.isPending}
+    <div className={`lb-workspace ${preview ? "lb-preview-mode" : ""}`}>
+      <header className="lb-command">
+        <Link to="/" className="lb-back" aria-label="Back to workspace">
+          ←
+        </Link>
+        <div className="lb-command-identity">
+          <span>Storefront studio</span>
+          <select
+            aria-label="Variant"
+            value={draft._id}
+            disabled={busy}
+            onChange={(e) => {
+              const id = e.currentTarget.value;
+              void mutate(async () => {
+                const next = queryClient
+                  .getQueryData<LandingPageBuilderData>(["landing-page-builder"])
+                  ?.variants.find((d) => d._id === id);
+                if (next) selectDraft(next);
+              });
+            }}
+          >
+            {builder.data.variants.map((d) => (
+              <option key={d._id} value={d._id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className={`lb-save-status lb-save-${autosave.status}`} role="status" aria-live="polite">
+          {autosave.status === "saved"
+            ? "Draft saved"
+            : autosave.status === "error"
+              ? "Not saved"
+              : autosave.status === "saving"
+                ? "Saving…"
+                : "Changes pending"}
+          {autosave.status === "error" && (
+            <button type="button" onClick={() => void autosave.flush()}>
+              Retry
+            </button>
+          )}
+        </p>
+        <div className="lb-history">
+          <button
+            type="button"
+            aria-label="Undo"
+            disabled={busy || !canEdit || !undo.current.length}
+            onClick={() => history("undo")}
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            aria-label="Redo"
+            disabled={busy || !canEdit || !redo.current.length}
+            onClick={() => history("redo")}
+          >
+            ↷
+          </button>
+        </div>
+        <fieldset className="lb-devices" aria-label="Preview device">
+          {[
+            [1440, "Desktop", "solar:monitor-linear"],
+            [768, "Tablet", "solar:tablet-linear"],
+            [390, "Mobile", "solar:smartphone-linear"],
+          ].map(([w, label, icon]) => (
+            <button
+              type="button"
+              key={w}
+              aria-label={String(label)}
+              aria-pressed={width === w}
+              onClick={() => setWidth(Number(w))}
             >
-              <Icon icon="solar:upload-linear" /> Publish
-            </Button>
-          </div>
-        </Header>
-
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex items-center gap-2 text-sm text-stone-500"
+              <Icon icon={String(icon)} />
+            </button>
+          ))}
+        </fieldset>
+        <button
+          type="button"
+          className="lb-preview-toggle"
+          aria-pressed={preview}
+          onClick={() => {
+            setPreview(!preview);
+            setLeftOpen(false);
+            setRightOpen(false);
+          }}
         >
-          {autosave.status === "error" ? (
-            <>
-              <span className="text-red-600">Draft not saved: {autosave.error}</span>
-              <Button variant="outline" size="sm" onClick={() => void autosave.flush()}>
-                Retry
-              </Button>
-            </>
-          ) : autosave.status === "saved" ? (
-            "Draft saved automatically"
-          ) : (
-            "Saving draft…"
+          {preview ? "Back to editing" : "Preview"}
+        </button>
+        <Button
+          className="lb-publish"
+          permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
+          disabled={busy}
+          onClick={() =>
+            void mutate(async () => {
+              await api(`/landing-page/variants/${draft._id}/publish`, { method: "POST" });
+              await refresh();
+              toast.success("Landing page published");
+            })
+          }
+        >
+          {busy ? "Working…" : "Publish"}
+        </Button>
+      </header>
+      <div className="lb-subcommand">
+        <div>
+          <strong>{page.isPublished ? "Live" : "Unpublished"}</strong>
+          {publishedChanges && <span> · Draft differs from live</span>}
+          {page.isPublished && (
+            <a href={getPublicSiteUrl(page.slug)} target="_blank" rel="noreferrer">
+              View live ↗
+            </a>
           )}
         </div>
-
-        <Card className="flex flex-wrap items-center gap-3 p-4">
-          <div className="min-w-48">
-            <Label>Variant</Label>
-            <Select value={variantId} onValueChange={chooseVariant}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {builder.data.variants.map((variant) => (
-                  <SelectItem key={variant._id} value={variant._id}>
-                    {variant.name}
-                    {page.publishedVariantId === variant._id ? " · LIVE" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            permission={{ path: "/landing-page/variants", method: "POST" }}
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const name = window.prompt("New variant name");
-              if (name?.trim()) createVariant.mutate({ name: name.trim() });
-            }}
+        <div className="lb-variant-actions">
+          <button type="button" disabled={!canCreate || busy} onClick={() => openDialog("new")}>
+            New
+          </button>
+          <button
+            type="button"
+            disabled={!canCreate || busy}
+            onClick={() => openDialog("duplicate")}
           >
-            <Icon icon="solar:add-circle-linear" /> New from template
-          </Button>
-          <Button
-            permission={{ path: "/landing-page/variants", method: "POST" }}
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const name = window.prompt("Duplicated variant name", `${draft.name} copy`);
-              if (name?.trim()) createVariant.mutate({ name: name.trim(), source: draft._id });
-            }}
+            Duplicate
+          </button>
+          <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("rename")}>
+            Rename
+          </button>
+          <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("reset")}>
+            Reset
+          </button>
+          <button
+            type="button"
+            disabled={
+              !canDelete ||
+              busy ||
+              builder.data.variants.length <= 1 ||
+              page.publishedVariantId === draft._id
+            }
+            onClick={() => openDialog("delete")}
           >
-            <Icon icon="solar:copy-linear" /> Duplicate
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              const name = window.prompt("Variant name", draft.name);
-              if (name?.trim() && name.trim() !== draft.name)
-                commit({ ...draft, name: name.trim() });
-            }}
-          >
-            <Icon icon="solar:pen-linear" /> Rename
-          </Button>
-          <Button
-            permission={{ path: "/landing-page/variants/id/reset", method: "PATCH" }}
-            variant="ghost"
-            size="sm"
-            onClick={() => setResetOpen(true)}
-          >
-            <Icon icon="solar:restart-linear" /> Reset
-          </Button>
-          <Button
-            permission={{ path: "/landing-page/variants/id", method: "DELETE" }}
-            variant="ghost"
-            size="sm"
-            disabled={builder.data.variants.length <= 1}
-            onClick={() => {
-              if (window.confirm(`Delete ${draft.name}?`)) removeVariant.mutate(draft._id);
-            }}
-          >
-            <Icon icon="solar:trash-bin-trash-linear" /> Delete
-          </Button>
-          <div className="ml-auto flex items-center gap-2 text-xs font-semibold">
-            <span
-              className={`size-2 rounded-full ${page.isPublished ? "bg-emerald-500" : "bg-stone-300"}`}
+            Delete
+          </button>
+          <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("settings")}>
+            Site settings
+          </button>
+          {page.isPublished && (
+            <button
+              type="button"
+              disabled={!canEdit || busy}
+              onClick={() =>
+                void mutate(async () => {
+                  await api("/landing-page/unpublish", { method: "POST" });
+                  await refresh();
+                })
+              }
+            >
+              Unpublish
+            </button>
+          )}
+        </div>
+      </div>
+      {(autosave.error || mutationError) && (
+        <div role="alert" className="lb-error">
+          {autosave.error || mutationError}
+        </div>
+      )}
+      <div className="lb-mobile-toolbar">
+        <button
+          type="button"
+          onClick={() => {
+            setLeftOpen(!leftOpen);
+            setRightOpen(false);
+          }}
+        >
+          Sections & templates
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setRightOpen(!rightOpen);
+            setLeftOpen(false);
+          }}
+        >
+          Inspector
+        </button>
+      </div>
+      {preview && (
+        <div className="lb-preview-banner">
+          <span>Interactive preview · Orders are disabled</span>
+          <label>
+            <input
+              type="checkbox"
+              checked={motionOff}
+              onChange={(e) => setMotionOff(e.target.checked)}
             />
-            {page.isPublished ? "Published" : "Not published"}
-            {page.isPublished && (
-              <>
-                <Button asChild variant="ghost" size="sm">
-                  <a href={getPublicSiteUrl(page.slug)} target="_blank" rel="noreferrer">
-                    View live
-                  </a>
-                </Button>
-                <Button
-                  permission={{ path: "/landing-page/unpublish", method: "POST" }}
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => unpublish.mutate()}
+            Motion off
+          </label>
+          <label>
+            Width{" "}
+            <input
+              type="number"
+              min={320}
+              max={1920}
+              value={width}
+              onChange={(e) => setWidth(Math.min(1920, Math.max(320, Number(e.target.value))))}
+            />
+          </label>
+        </div>
+      )}
+      <div className="lb-body">
+        {!preview && (
+          <aside
+            className={`lb-left ${leftOpen ? "lb-panel-open" : ""}`}
+            aria-label="Sections and templates"
+          >
+            <div className="lb-tabs" role="tablist">
+              {(["Sections", "Add", "Templates"] as const).map((t) => (
+                <button
+                  type="button"
+                  key={t}
+                  role="tab"
+                  aria-selected={leftTab === t}
+                  onClick={() => {
+                    setLeftTab(t);
+                    setSearch("");
+                  }}
                 >
-                  Unpublish
-                </Button>
-              </>
-            )}
-          </div>
-        </Card>
-
-        <div className="grid gap-4 xl:grid-cols-[210px_minmax(0,1fr)_320px]">
-          <Card className="h-fit p-4 xl:sticky xl:top-20">
-            <div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-widest text-stone-400">
-                  Sections
-                </p>
-                <span className="text-xs text-stone-400">{draft.sections.length}/20</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-3 w-full"
-                disabled={draft.sections.length >= 20}
-                onClick={() => {
-                  const section = createLandingSection(`Section ${draft.sections.length + 1}`);
-                  commit({ ...draft, sections: [...draft.sections, section] });
-                  setSelectedSectionId(section.id);
-                  setSelectedComponentId(undefined);
-                }}
-              >
-                <Icon icon="solar:add-square-linear" /> Add section
-              </Button>
+                  {t}
+                </button>
+              ))}
             </div>
-            <div className="mt-5 border-t border-pink-100 pt-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-stone-400">Theme</p>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <Field label="Primary">
-                  <input
-                    type="color"
-                    className="h-10 w-full rounded-lg"
-                    value={draft.theme.primaryColor}
-                    onChange={(e) =>
-                      commit({ ...draft, theme: { ...draft.theme, primaryColor: e.target.value } })
-                    }
+            {leftTab !== "Sections" && (
+              <input
+                className="lb-panel-search"
+                aria-label={`Search ${leftTab.toLowerCase()}`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search ${leftTab.toLowerCase()}`}
+              />
+            )}
+            <fieldset disabled={busy || !canEdit} className="lb-tree-fieldset">
+              {leftTab === "Sections" && (
+                <>
+                  <SectionTree
+                    sections={draft.sections}
+                    selectedSection={sectionId}
+                    selectedBlock={blockId}
+                    onSelect={select}
+                    onSection={sectionAction}
+                    onBlock={blockAction}
+                    onDrag={drag}
                   />
-                </Field>
-                <Field label="Background">
-                  <input
-                    type="color"
-                    className="h-10 w-full rounded-lg"
-                    value={draft.theme.backgroundColor}
-                    onChange={(e) =>
-                      commit({
-                        ...draft,
-                        theme: { ...draft.theme, backgroundColor: e.target.value },
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="Surface">
-                  <input
-                    type="color"
-                    className="h-10 w-full rounded-lg"
-                    value={draft.theme.surfaceColor}
-                    onChange={(e) =>
-                      commit({ ...draft, theme: { ...draft.theme, surfaceColor: e.target.value } })
-                    }
-                  />
-                </Field>
-                <Field label="Text">
-                  <input
-                    type="color"
-                    className="h-10 w-full rounded-lg"
-                    value={draft.theme.textColor}
-                    onChange={(e) =>
-                      commit({ ...draft, theme: { ...draft.theme, textColor: e.target.value } })
-                    }
-                  />
-                </Field>
-              </div>
-              <div className="mt-3 space-y-3">
-                <Field label="Font style">
-                  <Select
-                    value={draft.theme.fontStyle}
-                    onValueChange={(value) =>
-                      commit({
-                        ...draft,
-                        theme: {
-                          ...draft.theme,
-                          fontStyle: value as LandingPageVariant["theme"]["fontStyle"],
-                        },
-                      })
-                    }
+                  <button
+                    type="button"
+                    className="lb-add-button"
+                    disabled={draft.sections.length >= 20}
+                    onClick={() => {
+                      const s = createLandingSection();
+                      const footerIndex = draft.sections.findIndex((s) =>
+                        s.components.some((c) => c.type === "FOOTER"),
+                      );
+                      const sections = [...draft.sections];
+                      sections.splice(footerIndex < 0 ? sections.length : footerIndex, 0, s);
+                      commit({ ...draft, sections });
+                      select(s.id);
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CLASSIC">Classic</SelectItem>
-                      <SelectItem value="MODERN">Modern</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Button shape">
-                  <Select
+                    + Add section
+                  </button>
+                  <p className="lb-help">
+                    {draft.sections.length}/20 sections · {count}/30 blocks
+                  </p>
+                </>
+              )}
+              {leftTab === "Add" &&
+                (["Content", "Commerce", "Media", "Navigation"] as const).map((group) => (
+                  <div key={group} className="lb-add-group">
+                    <h3>{group}</h3>
+                    {Object.entries(blockRegistry)
+                      .filter(
+                        ([type, entry]) =>
+                          entry.group === group &&
+                          (v2 ||
+                            [
+                              "HERO",
+                              "TEXT",
+                              "MENU",
+                              "CATALOG",
+                              "GALLERY",
+                              "CONTACT",
+                              "CTA",
+                            ].includes(type)) &&
+                          entry.label.toLowerCase().includes(search.toLowerCase()),
+                      )
+                      .map(([type, entry]) => (
+                        <button
+                          type="button"
+                          key={type}
+                          disabled={count >= 30}
+                          onClick={() => add(type as LandingPageComponentType)}
+                        >
+                          <Icon icon={entry.icon} />
+                          {entry.label}
+                          <span>+</span>
+                        </button>
+                      ))}
+                  </div>
+                ))}
+            </fieldset>
+            {leftTab === "Templates" && (
+              <div className="lb-template-list">
+                {templates.isError && (
+                  <QueryError message={templates.error.message} retry={() => templates.refetch()} />
+                )}{" "}
+                {!v2 && (
+                  <p className="lb-help">
+                    Upgrade your design as a new variant. Your original remains available.
+                  </p>
+                )}
+                {filteredTemplates.map((t) => (
+                  <article key={t.id}>
+                    <img src={t.preview} alt={`${t.name} design direction`} loading="lazy" />
+                    <div>
+                      <h3>{t.name}</h3>
+                      <p>{t.description}</p>
+                      <span>
+                        {t.category} · {t.goal}
+                      </span>
+                      <Button
+                        disabled={busy || !canCreate}
+                        onClick={() => openDialog("template", t)}
+                      >
+                        View template
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+                {!templates.isLoading && !filteredTemplates.length && !templates.isError && (
+                  <p className="lb-help">No templates match your search.</p>
+                )}
+              </div>
+            )}
+          </aside>
+        )}
+        <main className="lb-canvas-area">
+          <div className="lb-canvas-label">
+            <span>
+              {width} px · {preview ? "Preview" : "Edit canvas"}
+            </span>
+            <span>
+              {v2
+                ? (templates.data?.templates.find((t) => t.id === draft.template?.id)?.name ??
+                  "Custom design")
+                : "Legacy design"}
+            </span>
+          </div>
+          <div className="lb-canvas-scroll">
+            <PreviewFrame
+              width={width}
+              payload={{
+                draft,
+                catalogItems: builder.data.catalogItems,
+                menuItems: builder.data.menuItems,
+                mode: preview ? "PREVIEW" : "EDIT",
+                selectedId: blockId,
+                motionOff,
+              }}
+              onSelect={(id, sid) => select(sid, id)}
+            />
+          </div>
+        </main>
+        {!preview && (
+          <aside
+            className={`lb-inspector ${rightOpen ? "lb-panel-open" : ""}`}
+            aria-label="Inspector"
+          >
+            <div className="lb-inspector-nav">
+              {(["Selection", "Theme", "Commerce"] as const).map((t) => (
+                <button
+                  type="button"
+                  key={t}
+                  aria-pressed={inspector === t}
+                  onClick={() => setInspector(t)}
+                >
+                  {t}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="lb-close-panel"
+                aria-label="Close inspector"
+                onClick={() => setRightOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <fieldset disabled={busy || !canEdit} className="lb-inspector-fields">
+              {inspector === "Selection" &&
+                (block ? (
+                  <BlockInspector
+                    key={block.id}
+                    block={block}
+                    draft={draft}
+                    catalog={builder.data.catalogItems}
+                    onChange={updateBlock}
+                  />
+                ) : section ? (
+                  <>
+                    <h2>Section</h2>
+                    <InspectorField label="Section name">
+                      <input
+                        maxLength={80}
+                        value={section.name}
+                        onChange={(e) => updateSection({ ...section, name: e.target.value })}
+                      />
+                    </InspectorField>
+                    {v2 && (
+                      <InspectorField label="Anchor">
+                        <input
+                          value={section.anchor ?? section.id}
+                          onChange={(e) => updateSection({ ...section, anchor: e.target.value })}
+                        />
+                      </InspectorField>
+                    )}
+                    <InspectorSelect
+                      label="Content width"
+                      value={section.contentWidth}
+                      values={["FULL", "WIDE", "CONTAINED"]}
+                      onChange={(v) =>
+                        updateSection({
+                          ...section,
+                          contentWidth: v as LandingPageSection["contentWidth"],
+                        })
+                      }
+                    />
+                    <InspectorSelect
+                      label="Spacing"
+                      value={section.padding}
+                      values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
+                      onChange={(v) =>
+                        updateSection({ ...section, padding: v as LandingPageSection["padding"] })
+                      }
+                    />
+                    <InspectorSelect
+                      label="Gap"
+                      value={section.gap}
+                      values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
+                      onChange={(v) =>
+                        updateSection({ ...section, gap: v as LandingPageSection["gap"] })
+                      }
+                    />
+                    <ColorField
+                      label="Section color"
+                      value={section.backgroundColor}
+                      onChange={(backgroundColor) => updateSection({ ...section, backgroundColor })}
+                    />
+                    <InspectorField label="Maximum section height (0 for automatic)">
+                      <input
+                        type="number"
+                        min={0}
+                        max={3000}
+                        step={1}
+                        value={section.maxHeight ?? 0}
+                        onChange={(e) =>
+                          updateSection({ ...section, maxHeight: Number(e.target.value) })
+                        }
+                      />
+                    </InspectorField>
+                    {v2 && (
+                      <>
+                        {(["padding", "gap"] as const).map((key) => (
+                          <InspectorSelect
+                            key={key}
+                            label={`Mobile section ${key}`}
+                            value={section.mobile?.[key] ?? section[key]}
+                            values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
+                            onChange={(v) =>
+                              updateSection({
+                                ...section,
+                                mobile: {
+                                  padding: section.mobile?.padding ?? section.padding,
+                                  gap: section.mobile?.gap ?? section.gap,
+                                  [key]: v as "NONE" | "SMALL" | "MEDIUM" | "LARGE",
+                                },
+                              })
+                            }
+                          />
+                        ))}
+                      </>
+                    )}
+                    <ColorField
+                      label="Section text"
+                      value={section.textColor}
+                      onChange={(textColor) => updateSection({ ...section, textColor })}
+                    />
+                    {v2 && (
+                      <BackgroundInspector
+                        value={section.background}
+                        color={draft.theme.backgroundColor}
+                        templateId={draft.template?.id}
+                        onChange={(background) => updateSection({ ...section, background })}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <p className="lb-help">Select a section or a block in the canvas.</p>
+                ))}
+              {inspector === "Theme" && (
+                <>
+                  <h2>Design system</h2>
+                  {v2 && (
+                    <InspectorSelect
+                      label="Body font"
+                      value={draft.theme.bodyFont ?? "APP_SANS"}
+                      values={["APP_SANS", "SYSTEM"]}
+                      onChange={(v) =>
+                        commit({
+                          ...draft,
+                          theme: { ...draft.theme, bodyFont: v as "APP_SANS" | "SYSTEM" },
+                        })
+                      }
+                    />
+                  )}
+                  {(
+                    [
+                      "primaryColor",
+                      "backgroundColor",
+                      "surfaceColor",
+                      "textColor",
+                      ...(v2 ? ["accentColor", "mutedTextColor", "borderColor"] : []),
+                    ] as Array<keyof LandingPageVariant["theme"]>
+                  ).map((key) => (
+                    <ColorField
+                      key={key}
+                      label={String(key).replace("Color", " color")}
+                      value={String(draft.theme[key] ?? "")}
+                      onChange={(value) =>
+                        commit({ ...draft, theme: { ...draft.theme, [key]: value } })
+                      }
+                    />
+                  ))}
+                  <InspectorSelect
+                    label="Button style"
                     value={draft.theme.buttonStyle}
-                    onValueChange={(value) =>
+                    values={["ROUNDED", "PILL", "SQUARE"]}
+                    onChange={(value) =>
                       commit({
                         ...draft,
                         theme: {
@@ -1406,540 +1075,375 @@ export function LandingPageBuilderPage() {
                         },
                       })
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {["ROUNDED", "PILL", "SQUARE"].map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {value}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="min-w-0 overflow-hidden p-0">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-pink-100 bg-white px-4 py-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-pink-700">
-                  Live preview
-                </p>
-                <p className="text-xs text-stone-500">
-                  {autosave.status === "saved"
-                    ? "Draft saved"
-                    : autosave.status === "error"
-                      ? "Draft not saved"
-                      : "Saving draft…"}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 rounded-xl bg-pink-50 p-1">
-                {(["DESKTOP", "TABLET", "MOBILE"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-label={`${value.toLowerCase()} preview`}
-                    className={`rounded-lg p-2 ${device === value ? "bg-white text-pink-700 shadow-sm" : "text-stone-400"}`}
-                    onClick={() => setDevice(value)}
-                  >
-                    <Icon
-                      icon={
-                        value === "DESKTOP"
-                          ? "solar:monitor-linear"
-                          : value === "TABLET"
-                            ? "solar:tablet-linear"
-                            : "solar:smartphone-linear"
-                      }
-                    />
-                  </button>
-                ))}
-                <span className="mx-1 h-5 w-px bg-pink-200" />
-                <button
-                  type="button"
-                  className="rounded-lg p-2 disabled:opacity-30"
-                  aria-label="Undo"
-                  disabled={!undoStack.current.length}
-                  onClick={undo}
-                >
-                  <Icon icon="solar:undo-left-linear" />
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg p-2 disabled:opacity-30"
-                  aria-label="Redo"
-                  disabled={!redoStack.current.length}
-                  onClick={redo}
-                >
-                  <Icon icon="solar:undo-right-linear" />
-                </button>
-              </div>
-            </div>
-            <div className="overflow-auto bg-stone-100 p-3 sm:p-5">
-              <div
-                className={`relative mx-auto min-h-[640px] overflow-hidden bg-white shadow-xl transition-[max-width] ${previewWidth}`}
-                style={{ background: draft.theme.backgroundColor, color: draft.theme.textColor }}
-              >
-                <SortableContext
-                  items={draft.sections.map((section) => `section:${section.id}`)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {draft.sections.map((section) => (
-                    <SortableSection
-                      key={section.id}
-                      section={section}
-                      variant={draft}
-                      menuItems={builder.data.menuItems}
-                      catalogItems={builder.data.catalogItems ?? []}
-                      selectedSectionId={selectedSectionId}
-                      selectedComponentId={selectedComponentId}
-                      onSelectSection={() => {
-                        setSelectedSectionId(section.id);
-                        setSelectedComponentId(undefined);
-                      }}
-                      onSelectComponent={(componentId) => {
-                        setSelectedSectionId(section.id);
-                        setSelectedComponentId(componentId);
-                        setContentEditor(
-                          section.components.find((component) => component.id === componentId),
-                        );
-                      }}
-                      onUpdateComponent={updateComponent}
-                      onDuplicateComponent={(component) => {
-                        if (componentCount() >= 30)
-                          return toast.error("Use no more than 30 components");
-                        const copy = { ...structuredClone(component), id: crypto.randomUUID() };
-                        const index = section.components.findIndex(
-                          (item) => item.id === component.id,
-                        );
-                        commit({
-                          ...draft,
-                          sections: draft.sections.map((item) =>
-                            item.id === section.id
-                              ? {
-                                  ...item,
-                                  components: [
-                                    ...item.components.slice(0, index + 1),
-                                    copy,
-                                    ...item.components.slice(index + 1),
-                                  ],
-                                }
-                              : item,
-                          ),
-                        });
-                        setSelectedSectionId(section.id);
-                        setSelectedComponentId(copy.id);
-                      }}
-                      onRemoveComponent={(component) => {
-                        if (componentCount() <= 1)
-                          return toast.error("Keep at least one component");
-                        commit({
-                          ...draft,
-                          sections: draft.sections.map((item) =>
-                            item.id === section.id
-                              ? {
-                                  ...item,
-                                  components: item.components.filter(
-                                    (entry) => entry.id !== component.id,
-                                  ),
-                                }
-                              : item,
-                          ),
-                        });
-                        setSelectedComponentId(undefined);
-                      }}
-                      onToggle={() => updateSection({ ...section, enabled: !section.enabled })}
-                      onDuplicate={() => {
-                        if (draft.sections.length >= 20)
-                          return toast.error("Use no more than 20 sections");
-                        if (componentCount() + section.components.length > 30)
-                          return toast.error("Use no more than 30 components");
-                        const copy = {
-                          ...structuredClone(section),
-                          id: crypto.randomUUID(),
-                          name: `${section.name} copy`,
-                          components: section.components.map((component) => ({
-                            ...component,
-                            id: crypto.randomUUID(),
-                          })),
-                        };
-                        const index = draft.sections.findIndex((item) => item.id === section.id);
-                        commit({
-                          ...draft,
-                          sections: [
-                            ...draft.sections.slice(0, index + 1),
-                            copy,
-                            ...draft.sections.slice(index + 1),
-                          ],
-                        });
-                        setSelectedSectionId(copy.id);
-                        setSelectedComponentId(undefined);
-                      }}
-                      onRemove={() => {
-                        if (draft.sections.length <= 1)
-                          return toast.error("Keep at least one section");
-                        if (componentCount() - section.components.length < 1)
-                          return toast.error("Keep at least one component on the page");
-                        if (
-                          section.components.length &&
-                          !window.confirm(
-                            `Delete ${section.name} and its ${section.components.length} components?`,
-                          )
-                        )
-                          return;
-                        const nextSections = draft.sections.filter(
-                          (item) => item.id !== section.id,
-                        );
-                        commit({ ...draft, sections: nextSections });
-                        setSelectedSectionId(nextSections[0]?.id);
-                        setSelectedComponentId(undefined);
-                      }}
-                      device={device}
-                    />
-                  ))}
-                </SortableContext>
-                {draft.commerce.orderingEnabled && hasOrderableItems && (
-                  <button
-                    type="button"
-                    className={`absolute bottom-5 z-30 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-xl ${
-                      draft.commerce.cartButtonPosition === "BOTTOM_LEFT" ? "left-5" : "right-5"
-                    }`}
-                    style={{ background: draft.theme.primaryColor }}
-                    onClick={() => setCommerceSettingsOpen(true)}
-                  >
-                    <Icon icon="solar:cart-large-2-linear" />
-                    {draft.commerce.cartButtonLabel}
-                    <span className="grid size-5 place-items-center rounded-full bg-white text-[10px] text-stone-900">
-                      0
-                    </span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </Card>
-
-          <Card className="h-fit max-h-[calc(100vh-6rem)] overflow-y-auto p-4 xl:sticky xl:top-20">
-            {selected ? (
-              <ComponentSettings
-                component={selected}
-                sections={draft.sections}
-                onAssignSection={(sectionId) => assignComponentToSection(selected.id, sectionId)}
-                onChange={updateComponent}
-                onEditContent={() => setContentEditor(selected)}
-              />
-            ) : (
-              <SectionSettings
-                section={selectedSection}
-                theme={draft.theme}
-                onChange={updateSection}
-              />
-            )}
-          </Card>
-        </div>
-        <FloatingComponentToolbar
-          key={draft._id}
-          sections={draft.sections}
-          selectedSectionId={selectedSectionId}
-          componentCount={componentCount()}
-          dragging={Boolean(activePaletteType)}
-          onSelectSection={(id) => {
-            setSelectedSectionId(id);
-            setSelectedComponentId(undefined);
-          }}
-          onAdd={addComponent}
-        />
-      </div>
-      {createPortal(
-        <DragOverlay dropAnimation={null} zIndex={45}>
-          {activePaletteType && (
-            <div className="pointer-events-none flex w-44 items-center gap-3 rounded-xl border border-pink-300 bg-white p-3 text-sm font-semibold text-pink-800 shadow-xl">
-              <Icon
-                icon={
-                  componentChoices.find((choice) => choice.type === activePaletteType)?.icon ??
-                  "solar:add-circle-linear"
-                }
-                className="size-5"
-              />
-              {componentChoices.find((choice) => choice.type === activePaletteType)?.label}
-            </div>
-          )}
-        </DragOverlay>,
-        document.body,
-      )}
-
-      {contentEditor && (
-        <ComponentContentDialog
-          key={contentEditor.id}
-          initialComponent={contentEditor}
-          onClose={() => setContentEditor(undefined)}
-          onApply={(edited) => {
-            const current = draft.sections
-              .flatMap((section) => section.components)
-              .find((component) => component.id === edited.id);
-            if (current)
-              updateComponent({ ...current, content: edited.content } as LandingPageComponent);
-          }}
-        />
-      )}
-      <Dialog
-        open={resetOpen}
-        onOpenChange={(open) => {
-          if (!resetVariant.isPending) setResetOpen(open);
-        }}
-      >
-        <DialogContent>
-          <DialogTitle>Reset {draft.name}?</DialogTitle>
-          <DialogDescription>
-            This restores the default landing-page layout, theme, and checkout settings for this
-            variant. Recent changes will be lost, including changes already saved automatically.
-            This cannot be undone. Your published page stays the same until you publish again.
-          </DialogDescription>
-          <div className="mt-5 flex justify-end gap-2">
-            <Button
-              variant="outline"
-              disabled={resetVariant.isPending}
-              onClick={() => setResetOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              permission={{ path: "/landing-page/variants/id/reset", method: "PATCH" }}
-              variant="destructive"
-              disabled={resetVariant.isPending}
-              onClick={() => resetVariant.mutate(draft._id)}
-            >
-              {resetVariant.isPending ? "Resetting…" : "Reset variant"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent>
-          <DialogTitle>Landing-page settings</DialogTitle>
-          <DialogDescription>
-            Set the public address and browser/search description.
-          </DialogDescription>
-          <form
-            className="mt-5 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const values = Object.fromEntries(new FormData(event.currentTarget));
-              saveSettings.mutate(values);
-            }}
-          >
-            <Field label="Site title">
-              <Input name="siteTitle" defaultValue={page.siteTitle} required />
-            </Field>
-            <Field label="Public page address">
-              <Input name="slug" defaultValue={page.slug} required />
-              <p className="mt-2 break-all text-xs text-stone-500">
-                Published as {getPublicSiteUrl(page.slug)}
-              </p>
-            </Field>
-            <Field label="Search description">
-              <textarea
-                name="seoDescription"
-                className={textAreaClass}
-                defaultValue={page.seoDescription}
-                maxLength={240}
-              />
-            </Field>
-            <Button
-              permission={{ path: "/landing-page/settings", method: "PATCH" }}
-              className="w-full"
-              disabled={saveSettings.isPending}
-            >
-              Save settings
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={commerceSettingsOpen} onOpenChange={setCommerceSettingsOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogTitle>Cart & checkout settings</DialogTitle>
-          <DialogDescription>
-            Control ordering, fulfillment, fees, and the floating cart for this variant.
-          </DialogDescription>
-          <div className="mt-5 space-y-5">
-            <label className="flex items-start gap-3 rounded-xl border border-pink-100 p-4">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={draft.commerce.orderingEnabled}
-                onChange={(event) =>
-                  commit({
-                    ...draft,
-                    commerce: { ...draft.commerce, orderingEnabled: event.target.checked },
-                  })
-                }
-              />
-              <span>
-                <span className="block font-semibold">Enable online ordering</span>
-                <span className="text-sm text-stone-500">
-                  Shows Add to cart controls and accepts orders from the published page.
-                </span>
-              </span>
-            </label>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Cart button label">
-                <Input
-                  value={draft.commerce.cartButtonLabel}
-                  maxLength={30}
-                  onChange={(event) =>
-                    commit({
-                      ...draft,
-                      commerce: { ...draft.commerce, cartButtonLabel: event.target.value },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Cart button position">
-                <Select
-                  value={draft.commerce.cartButtonPosition}
-                  onValueChange={(value) =>
-                    commit({
-                      ...draft,
-                      commerce: {
-                        ...draft.commerce,
-                        cartButtonPosition:
-                          value as LandingPageVariant["commerce"]["cartButtonPosition"],
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BOTTOM_RIGHT">Bottom right</SelectItem>
-                    <SelectItem value="BOTTOM_LEFT">Bottom left</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-
-            <div>
-              <Label>Fulfillment and payment methods</Label>
-              <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                {(
-                  [
-                    {
-                      fulfillment: "PICKUP",
-                      payment: "PAY_ON_PICKUP",
-                      title: "Pickup",
-                      detail: "Customer pays when collecting the order.",
-                    },
-                    {
-                      fulfillment: "DELIVERY",
-                      payment: "CASH_ON_DELIVERY",
-                      title: "Delivery",
-                      detail: "Customer pays cash when the order arrives.",
-                    },
-                  ] as const
-                ).map((option) => {
-                  const checked = draft.commerce.fulfillmentMethods.includes(option.fulfillment);
-                  return (
-                    <label
-                      key={option.fulfillment}
-                      className="flex items-start gap-3 rounded-xl border border-pink-100 p-4"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={checked}
-                        onChange={() =>
+                  />
+                  {v2 ? (
+                    <>
+                      <InspectorSelect
+                        label="Display font"
+                        value={draft.theme.displayFont}
+                        values={[
+                          "LEGACY",
+                          "DISPLAY_CONDENSED",
+                          "EDITORIAL_SERIF",
+                          "MODERN_GROTESK",
+                        ]}
+                        onChange={(value) =>
                           commit({
                             ...draft,
-                            commerce: {
-                              ...draft.commerce,
-                              fulfillmentMethods: checked
-                                ? draft.commerce.fulfillmentMethods.filter(
-                                    (method) => method !== option.fulfillment,
-                                  )
-                                : [...draft.commerce.fulfillmentMethods, option.fulfillment],
-                              paymentMethods: checked
-                                ? draft.commerce.paymentMethods.filter(
-                                    (method) => method !== option.payment,
-                                  )
-                                : [...draft.commerce.paymentMethods, option.payment],
+                            theme: {
+                              ...draft.theme,
+                              displayFont: value as LandingPageVariant["theme"]["displayFont"],
                             },
                           })
                         }
                       />
-                      <span>
-                        <span className="block font-semibold">{option.title}</span>
-                        <span className="text-sm text-stone-500">{option.detail}</span>
-                      </span>
+                      <InspectorSelect
+                        label="Content maximum width"
+                        value={draft.theme.contentMaxWidth}
+                        values={[1120, 1280, 1440]}
+                        onChange={(value) =>
+                          commit({
+                            ...draft,
+                            theme: {
+                              ...draft.theme,
+                              contentMaxWidth: Number(value) as 1120 | 1280 | 1440,
+                            },
+                          })
+                        }
+                      />
+                      <InspectorSelect
+                        label="Motion intensity"
+                        value={draft.theme.motionLevel}
+                        values={["OFF", "SUBTLE", "EXPRESSIVE"]}
+                        onChange={(value) =>
+                          commit({
+                            ...draft,
+                            theme: {
+                              ...draft.theme,
+                              motionLevel: value as "OFF" | "SUBTLE" | "EXPRESSIVE",
+                            },
+                          })
+                        }
+                      />
+                      <BackgroundInspector
+                        value={draft.theme.background}
+                        inherit={false}
+                        color={draft.theme.backgroundColor}
+                        templateId={draft.template?.id}
+                        onChange={(background) =>
+                          commit({ ...draft, theme: { ...draft.theme, background } })
+                        }
+                      />
+                    </>
+                  ) : (
+                    <InspectorSelect
+                      label="Font style"
+                      value={draft.theme.fontStyle}
+                      values={["MODERN", "CLASSIC"]}
+                      onChange={(value) =>
+                        commit({
+                          ...draft,
+                          theme: { ...draft.theme, fontStyle: value as "MODERN" | "CLASSIC" },
+                        })
+                      }
+                    />
+                  )}
+                </>
+              )}
+              {inspector === "Commerce" && (
+                <>
+                  <h2>Conversion & checkout</h2>
+                  {v2 && (
+                    <InspectorSelect
+                      label="Conversion goal"
+                      value={draft.goal}
+                      values={["SHOP", "CATALOG", "INQUIRY"]}
+                      onChange={(value) =>
+                        commit({
+                          ...draft,
+                          goal: value as LandingGoal,
+                          commerce: { ...draft.commerce, orderingEnabled: value === "SHOP" },
+                        })
+                      }
+                    />
+                  )}
+                  <p className="lb-help">
+                    Shop enables ordering. Catalog and inquiry show product details and real contact
+                    links.
+                  </p>
+                  <label className="lb-checkbox">
+                    <input
+                      type="checkbox"
+                      disabled={v2 && draft.goal !== "SHOP"}
+                      checked={draft.commerce.orderingEnabled}
+                      onChange={(e) =>
+                        commit({
+                          ...draft,
+                          commerce: { ...draft.commerce, orderingEnabled: e.target.checked },
+                        })
+                      }
+                    />
+                    Enable ordering
+                  </label>
+                  <InspectorField label="Cart button label">
+                    <input
+                      maxLength={30}
+                      value={draft.commerce.cartButtonLabel}
+                      onChange={(e) =>
+                        commit({
+                          ...draft,
+                          commerce: { ...draft.commerce, cartButtonLabel: e.target.value },
+                        })
+                      }
+                    />
+                  </InspectorField>
+                  <InspectorSelect
+                    label="Cart button position"
+                    value={draft.commerce.cartButtonPosition}
+                    values={["BOTTOM_LEFT", "BOTTOM_RIGHT"]}
+                    onChange={(v) =>
+                      commit({
+                        ...draft,
+                        commerce: {
+                          ...draft.commerce,
+                          cartButtonPosition: v as "BOTTOM_LEFT" | "BOTTOM_RIGHT",
+                        },
+                      })
+                    }
+                  />
+                  {(["PICKUP", "DELIVERY"] as const).map((method) => (
+                    <label key={method} className="lb-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={draft.commerce.fulfillmentMethods.includes(method)}
+                        onChange={(e) => {
+                          const payment =
+                            method === "PICKUP" ? "PAY_ON_PICKUP" : "CASH_ON_DELIVERY";
+                          commit({
+                            ...draft,
+                            commerce: {
+                              ...draft.commerce,
+                              fulfillmentMethods: e.target.checked
+                                ? [...draft.commerce.fulfillmentMethods, method]
+                                : draft.commerce.fulfillmentMethods.filter((m) => m !== method),
+                              paymentMethods: e.target.checked
+                                ? [...draft.commerce.paymentMethods, payment]
+                                : draft.commerce.paymentMethods.filter((m) => m !== payment),
+                            },
+                          });
+                        }}
+                      />
+                      {method === "PICKUP"
+                        ? "Pickup · Pay on pickup"
+                        : "Delivery · Cash on delivery"}
                     </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Minimum order">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={draft.commerce.minimumOrder}
-                  onChange={(event) =>
-                    commit({
-                      ...draft,
-                      commerce: {
-                        ...draft.commerce,
-                        minimumOrder: Number(event.target.value),
-                      },
-                    })
-                  }
+                  ))}
+                  {(["minimumOrder", "deliveryFee"] as const).map((key) => (
+                    <InspectorField
+                      key={key}
+                      label={key === "minimumOrder" ? "Minimum order" : "Delivery fee"}
+                    >
+                      <input
+                        type="number"
+                        min={0}
+                        max={1000000}
+                        step={0.01}
+                        value={draft.commerce[key]}
+                        onChange={(e) =>
+                          commit({
+                            ...draft,
+                            commerce: { ...draft.commerce, [key]: Number(e.target.value) },
+                          })
+                        }
+                      />
+                    </InspectorField>
+                  ))}
+                  <InspectorField label="Checkout instructions">
+                    <textarea
+                      maxLength={500}
+                      value={draft.commerce.checkoutInstructions}
+                      onChange={(e) =>
+                        commit({
+                          ...draft,
+                          commerce: { ...draft.commerce, checkoutInstructions: e.target.value },
+                        })
+                      }
+                    />
+                  </InspectorField>
+                  {v2 && (
+                    <InspectorField label="Inline merchant contact">
+                      <select
+                        value={draft.commerce.contactBlockId ?? ""}
+                        onChange={(e) =>
+                          commit({
+                            ...draft,
+                            commerce: {
+                              ...draft.commerce,
+                              contactBlockId: e.target.value || undefined,
+                            },
+                          })
+                        }
+                      >
+                        <option value="">Separate contact section</option>
+                        {draft.sections
+                          .filter((s) => s.enabled)
+                          .flatMap((s) =>
+                            s.components.filter((c) => c.enabled && c.type === "CONTACT"),
+                          )
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.type === "CONTACT" ? c.content.heading : c.id}
+                            </option>
+                          ))}
+                      </select>
+                    </InspectorField>
+                  )}
+                </>
+              )}
+            </fieldset>
+          </aside>
+        )}
+      </div>
+      <Dialog
+        open={Boolean(dialog)}
+        onOpenChange={(open) => !busy && !open && setDialog(undefined)}
+      >
+        <DialogContent className={dialog?.kind === "template" ? "max-w-3xl" : ""}>
+          <DialogTitle>
+            {dialog?.kind === "template"
+              ? dialog.template?.name
+              : dialog?.kind === "reset"
+                ? `Reset ${draft.name}?`
+                : dialog?.kind === "delete"
+                  ? `Delete ${draft.name}?`
+                  : dialog?.kind === "settings"
+                    ? "Site settings"
+                    : `${dialog?.kind === "rename" ? "Rename" : dialog?.kind === "duplicate" ? "Duplicate" : "New"} variant`}
+          </DialogTitle>
+          <DialogDescription>
+            {dialog?.kind === "reset"
+              ? `Restore ${templates.data?.templates.find((t) => t.id === draft.template?.id)?.name ?? "the default template"}${draft.template ? " revision " + draft.template.revision : ""}. Recent changes will be lost, including changes already saved automatically. Your published page stays the same until you publish again.`
+              : dialog?.kind === "delete"
+                ? "This removes this draft variant."
+                : dialog?.kind === "template"
+                  ? "Apply as a new editable draft. Your existing variant and published page remain available."
+                  : "Changes to a draft become public only when you publish."}
+          </DialogDescription>
+          <form onSubmit={submitDialog} className="lb-dialog-form">
+            {dialog?.kind === "new" && dialog.template && (
+              <>
+                <InspectorField label="Starting template">
+                  <select
+                    value={dialog.template.id}
+                    onChange={(e) => {
+                      const template = templates.data?.templates.find(
+                        (t) => t.id === e.target.value,
+                      );
+                      if (template) {
+                        setDialog({ ...dialog, template });
+                        setGoal(template.goal);
+                      }
+                    }}
+                  >
+                    {templates.data?.templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </InspectorField>
+                <InspectorSelect
+                  label="Goal"
+                  value={goal}
+                  values={["SHOP", "CATALOG", "INQUIRY"]}
+                  onChange={(v) => setGoal(v as LandingGoal)}
                 />
-              </Field>
-              <Field label="Delivery fee">
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  disabled={!draft.commerce.fulfillmentMethods.includes("DELIVERY")}
-                  value={draft.commerce.deliveryFee}
-                  onChange={(event) =>
-                    commit({
-                      ...draft,
-                      commerce: { ...draft.commerce, deliveryFee: Number(event.target.value) },
-                    })
-                  }
-                />
-              </Field>
-            </div>
-
-            <Field label="Checkout instructions">
-              <textarea
-                className={textAreaClass}
-                maxLength={500}
-                value={draft.commerce.checkoutInstructions}
-                onChange={(event) =>
-                  commit({
-                    ...draft,
-                    commerce: { ...draft.commerce, checkoutInstructions: event.target.value },
-                  })
-                }
-              />
-            </Field>
-            {draft.commerce.orderingEnabled && !draft.commerce.fulfillmentMethods.length && (
-              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-                Select pickup or delivery before saving this enabled storefront.
-              </p>
+              </>
             )}
-            <Button className="w-full" onClick={() => setCommerceSettingsOpen(false)}>
-              Done
-            </Button>
-          </div>
+            {dialog?.kind === "template" && dialog.template && (
+              <>
+                <div className="lb-template-detail-images">
+                  <img src={dialog.template.preview} alt="Desktop design direction" />
+                  <img src={dialog.template.mobilePreview} alt="Mobile background composition" />
+                  {dialog.template.orderingPreview && (
+                    <img src={dialog.template.orderingPreview} alt="Companion ordering direction" />
+                  )}
+                </div>
+                <p>{dialog.template.description}</p>
+                <p>Includes: {dialog.template.sections.join(" · ")}</p>
+                <InspectorSelect
+                  label="Goal"
+                  value={goal}
+                  values={["SHOP", "CATALOG", "INQUIRY"]}
+                  onChange={(v) => setGoal(v as LandingGoal)}
+                />
+              </>
+            )}
+            {dialog?.kind === "settings" ? (
+              <>
+                <InspectorField label="Site title">
+                  <input name="siteTitle" defaultValue={page.siteTitle} maxLength={120} required />
+                </InspectorField>
+                <InspectorField label="Public page address">
+                  <input
+                    name="slug"
+                    defaultValue={page.slug}
+                    pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                    minLength={3}
+                    maxLength={60}
+                    required
+                  />
+                </InspectorField>
+                <InspectorField label="Search description">
+                  <textarea
+                    name="seoDescription"
+                    defaultValue={page.seoDescription}
+                    maxLength={240}
+                  />
+                </InspectorField>
+              </>
+            ) : (
+              !["reset", "delete"].includes(dialog?.kind ?? "") && (
+                <InspectorField label="Variant name">
+                  <input
+                    value={name}
+                    maxLength={80}
+                    required
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </InspectorField>
+              )
+            )}
+            {mutationError && <p role="alert">{mutationError}</p>}
+            <div className="lb-dialog-actions">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setDialog(undefined)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={busy}
+                variant={
+                  dialog?.kind === "reset" || dialog?.kind === "delete" ? "destructive" : "default"
+                }
+              >
+                {busy
+                  ? "Working…"
+                  : dialog?.kind === "reset"
+                    ? "Reset variant"
+                    : dialog?.kind === "delete"
+                      ? "Delete variant"
+                      : dialog?.kind === "template"
+                        ? "Apply as new variant"
+                        : "Confirm"}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
-    </DndContext>
+    </div>
   );
 }

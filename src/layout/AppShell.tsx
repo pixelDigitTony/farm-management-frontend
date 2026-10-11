@@ -171,6 +171,7 @@ export function AppShell() {
       </div>
     </>
   );
+  if (location.pathname === "/landing-page" && canAccess(user, "landing-page")) return <Outlet />;
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col bg-berry-950 lg:flex">

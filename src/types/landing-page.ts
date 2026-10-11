@@ -1,152 +1,75 @@
-export type LandingPageTheme = {
-  primaryColor: string;
-  backgroundColor: string;
-  surfaceColor: string;
-  textColor: string;
-  fontStyle: "MODERN" | "CLASSIC";
-  buttonStyle: "ROUNDED" | "PILL" | "SQUARE";
-};
-
-export type LandingPageCommerceSettings = {
-  orderingEnabled: boolean;
-  cartButtonLabel: string;
-  cartButtonPosition: "BOTTOM_RIGHT" | "BOTTOM_LEFT";
-  fulfillmentMethods: Array<"PICKUP" | "DELIVERY">;
-  paymentMethods: Array<"PAY_ON_PICKUP" | "CASH_ON_DELIVERY">;
-  checkoutInstructions: string;
-  minimumOrder: number;
-  deliveryFee: number;
-};
-
-export const defaultLandingPageCommerceSettings: LandingPageCommerceSettings = {
-  orderingEnabled: true,
-  cartButtonLabel: "Cart",
-  cartButtonPosition: "BOTTOM_RIGHT",
-  fulfillmentMethods: ["PICKUP", "DELIVERY"],
-  paymentMethods: ["PAY_ON_PICKUP", "CASH_ON_DELIVERY"],
-  checkoutInstructions: "The owner will review your order before confirming it.",
-  minimumOrder: 0,
-  deliveryFee: 0,
-};
-
-export type LandingPageComponentType =
-  | "HERO"
-  | "TEXT"
-  | "MENU"
-  | "CATALOG"
-  | "GALLERY"
-  | "CONTACT"
-  | "CTA";
-export type LandingPageComponentWidth = "FULL" | "TWO_THIRDS" | "HALF" | "THIRD";
-export type LandingPageSectionContentWidth = "FULL" | "WIDE" | "CONTAINED";
-export type LandingPageSectionSpacing = "NONE" | "SMALL" | "MEDIUM" | "LARGE";
+import type * as v from "valibot";
+import type {
+  landingPageComponentSchema,
+  landingPageSectionSchema,
+  landingPageThemeSchema,
+  landingPageCommerceSettingsSchema,
+  motionSchema,
+  mediaAssetSchema,
+  actionTargetSchema,
+  backgroundSchema,
+} from "@/lib/landing-page/schema";
+export { defaultLandingPageCommerceSettings } from "@/lib/landing-page/schema";
+import { defaultLandingPageCommerceSettings } from "@/lib/landing-page/schema";
+export type LandingPageTheme = v.InferOutput<typeof landingPageThemeSchema>;
+export type LandingPageCommerceSettings = v.InferOutput<typeof landingPageCommerceSettingsSchema>;
+export type LandingPageComponent = v.InferOutput<typeof landingPageComponentSchema>;
+export type LandingPageComponentType = LandingPageComponent["type"];
+export type LandingPageSection = Omit<
+  v.InferOutput<typeof landingPageSectionSchema>,
+  "maxHeight"
+> & { maxHeight?: number };
+export type LandingPageComponentWidth = LandingPageComponent["width"];
+export type LandingPageSectionContentWidth = LandingPageSection["contentWidth"];
+export type LandingPageSectionSpacing = LandingPageSection["padding"];
 export type LandingPageDisplayMode = "VERTICAL" | "HORIZONTAL";
-
-type BaseComponent<T extends LandingPageComponentType, C> = {
-  id: string;
-  type: T;
-  enabled: boolean;
-  width: LandingPageComponentWidth;
-  buttonTextColor?: string;
-  content: C;
-};
-
-export type HeroComponent = BaseComponent<
-  "HERO",
-  {
-    eyebrow: string;
-    title: string;
-    body: string;
-    mediaUrl: string;
-    primaryLabel: string;
-    primaryUrl: string;
-    secondaryLabel: string;
-    secondaryUrl: string;
-  }
->;
-export type TextComponent = BaseComponent<
-  "TEXT",
-  { heading: string; body: string; alignment: "LEFT" | "CENTER" }
->;
-export type MenuComponent = BaseComponent<
-  "MENU",
-  {
-    heading: string;
-    body: string;
-    menuItemIds: string[];
-    columns: 2 | 3 | 4;
-    displayMode?: LandingPageDisplayMode;
-  }
->;
-export type CatalogComponent = BaseComponent<
-  "CATALOG",
-  {
-    heading: string;
-    body: string;
-    catalogItemRefs: Array<{ sourceType: "MENU_ITEM" | "PRODUCT"; sourceId: string }>;
-    columns: 2 | 3 | 4;
-    displayMode?: LandingPageDisplayMode;
-  }
->;
-export type GalleryComponent = BaseComponent<
-  "GALLERY",
-  { heading: string; mediaUrls: string[]; columns: 2 | 3 | 4 }
->;
-export type ContactComponent = BaseComponent<
-  "CONTACT",
-  {
-    heading: string;
-    body: string;
-    address: string;
-    phone: string;
-    email: string;
-    hours: string;
-    facebookUrl: string;
-    instagramUrl: string;
-    mapUrl: string;
-  }
->;
-export type CtaComponent = BaseComponent<
-  "CTA",
-  { heading: string; body: string; buttonLabel: string; buttonUrl: string }
->;
-
-export type LandingPageComponent =
-  | HeroComponent
-  | TextComponent
-  | MenuComponent
-  | CatalogComponent
-  | GalleryComponent
-  | ContactComponent
-  | CtaComponent;
-
-export type LandingPageSection = {
-  id: string;
-  name: string;
-  enabled: boolean;
-  backgroundColor: string;
-  textColor: string;
-  contentWidth: LandingPageSectionContentWidth;
-  padding: LandingPageSectionSpacing;
-  gap: LandingPageSectionSpacing;
-  maxHeight?: number;
-  components: LandingPageComponent[];
-};
-
+export type MediaAsset = v.InferOutput<typeof mediaAssetSchema>;
+export type MotionSettings = v.InferOutput<typeof motionSchema>;
+export type BackgroundSettings = v.InferOutput<typeof backgroundSchema>;
+export type ActionTarget = v.InferOutput<typeof actionTargetSchema>;
+export type TemplateId =
+  | "bold-market"
+  | "editorial-studio"
+  | "architectural-escape"
+  | "everyday-boutique"
+  | "farm-and-market";
+export type LandingGoal = "SHOP" | "CATALOG" | "INQUIRY";
+export type HeroComponent = Extract<LandingPageComponent, { type: "HERO" }>;
+export type TextComponent = Extract<LandingPageComponent, { type: "TEXT" }>;
+export type MenuComponent = Extract<LandingPageComponent, { type: "MENU" }>;
+export type CatalogComponent = Extract<LandingPageComponent, { type: "CATALOG" }>;
+export type GalleryComponent = Extract<LandingPageComponent, { type: "GALLERY" }>;
+export type ContactComponent = Extract<LandingPageComponent, { type: "CONTACT" }>;
+export type CtaComponent = Extract<LandingPageComponent, { type: "CTA" }>;
 export type LandingPageVariant = {
   _id: string;
   name: string;
+  schemaVersion?: 1 | 2;
+  template?: { id: TemplateId; revision: number };
+  goal?: LandingGoal;
   theme: LandingPageTheme;
   commerce: LandingPageCommerceSettings;
   sections: LandingPageSection[];
   createdAt?: string;
   updatedAt?: string;
 };
-
 export type LandingPageVariantPayload = Omit<LandingPageVariant, "commerce" | "sections"> & {
   commerce?: Partial<LandingPageCommerceSettings>;
   sections?: LandingPageSection[];
   components?: LandingPageComponent[];
+};
+export type LandingTemplate = {
+  id: TemplateId;
+  revision: number;
+  name: string;
+  description: string;
+  category: string;
+  goal: LandingGoal;
+  preview: string;
+  mobilePreview: string;
+  sections: string[];
+  sceneId: string;
+  orderingPreview?: string;
 };
 
 export type LandingPageRecord = {
@@ -208,6 +131,35 @@ export type LandingPageBuilderData = {
 
 export function createLandingComponent(type: LandingPageComponentType): LandingPageComponent {
   const base = { id: crypto.randomUUID(), enabled: true, width: "FULL" as const };
+  if (type === "HEADER")
+    return {
+      ...base,
+      type,
+      content: {
+        brand: "Your brand",
+        tagline: "",
+        navigation: [],
+        messagingUrl: "",
+        showSearch: true,
+        showCart: true,
+      },
+    };
+  if (type === "FOOTER")
+    return { ...base, type, content: { brand: "Your brand", statement: "", legal: "", links: [] } };
+  if (type === "FEATURES")
+    return { ...base, type, content: { heading: "What makes us different", items: [] } };
+  if (type === "SHOWCASE")
+    return { ...base, type, content: { heading: "Explore our offerings", body: "", items: [] } };
+  if (type === "MEDIA_STORY")
+    return { ...base, type, content: { heading: "A closer look", body: "", frames: [] } };
+  if (type === "TESTIMONIALS")
+    return {
+      ...base,
+      type,
+      content: { heading: "Customer stories", displayMode: "RAIL", entries: [] },
+    };
+  if (type === "FAQ")
+    return { ...base, type, content: { heading: "Questions and answers", items: [] } };
   if (type === "HERO")
     return {
       ...base,
@@ -247,7 +199,7 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
       type,
       content: {
         heading: "Featured products",
-        body: "Order food, clothing, and other products from our business.",
+        body: "Explore our collection.",
         catalogItemRefs: [],
         columns: 3,
         displayMode: "HORIZONTAL",
@@ -275,7 +227,7 @@ export function createLandingComponent(type: LandingPageComponentType): LandingP
     ...base,
     type: "CTA",
     content: {
-      heading: "Ready to order?",
+      heading: "Discover more",
       body: "Get in touch with us today.",
       buttonLabel: "Contact us",
       buttonUrl: "#contact",

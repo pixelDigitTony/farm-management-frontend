@@ -17,6 +17,10 @@
     "test:lighthouse": "playwright test --config=playwright.lighthouse.config.ts",
     "test:bundle": "node scripts/bundle-report.mjs",
     "typecheck:tests": "tsc -p tsconfig.test.json",
+    "landing:sync": "node scripts/sync-landing-contract.mjs",
+    "test:landing-browser": "node scripts/verify-landing-v2.mjs",
+    "test:landing-backgrounds": "node scripts/verify-landing-backgrounds.mjs",
+    "test:landing-budgets": "node scripts/verify-landing-budgets.mjs",
     "build:test": "VITE_API_URL=/api vite build"
   },
   "dependencies": {
@@ -44,6 +48,7 @@
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
+    "three": "^0.186.1",
     "valibot": "^1.4.2"
   },
   "devDependencies": {
@@ -59,6 +64,7 @@
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.0.5",
     "@vitest/coverage-v8": "^4.1.10",
     "dependency-cruiser": "^18.2.0",

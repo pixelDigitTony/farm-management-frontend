@@ -1,4 +1,5 @@
 node_modules/
+.npm-task-cache/
 dist/
 .env
 .env.local

@@ -1,799 +1,219 @@
-import { Icon } from "@iconify/react";
-import { useRef, useState } from "react";
-import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
-import { StoredImage } from "@/components/StoredImage";
-import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
-import { getMenuMediaEmbed, getMenuMediaUrls } from "@/lib/google-drive";
+import { useState } from "react";
 import type {
   LandingCatalogItem,
+  LandingCatalogVariant,
+  LandingGoal,
   LandingMenuItem,
   LandingPageComponent,
-  LandingPageDisplayMode,
   LandingPageSection,
   LandingPageTheme,
+  TemplateId,
 } from "@/types/landing-page";
+import { LandingBackground } from "./Background";
+import { StorefrontBlock, type StorefrontContext } from "./blocks/StorefrontBlocks";
+import { LandingPageRenderer as LegacyRenderer, sectionScrollStyle } from "./LegacyLandingRenderer";
+import { LandingMotionProvider, MotionBlock, type RenderMode } from "./motion/LandingMotion";
+import "./storefront.css";
 
-type LandingPageRendererProps = {
+export {
+  contrastingButtonText,
+  LandingPageComponentView,
+  sectionScrollStyle,
+} from "./LegacyLandingRenderer";
+export type LandingRendererProps = {
   theme: LandingPageTheme;
   sections: LandingPageSection[];
   menuItems: LandingMenuItem[];
   catalogItems?: LandingCatalogItem[];
-  onAddToCart?: (item: LandingCatalogItem) => void;
+  schemaVersion?: 1 | 2;
+  template?: { id: TemplateId; revision: number };
+  goal?: LandingGoal;
+  mode?: RenderMode;
   compact?: boolean;
+  onAddToCart?: (
+    item: LandingCatalogItem,
+    variant?: LandingCatalogVariant,
+    quantity?: number,
+    shopNow?: boolean,
+  ) => void;
+  cartCount?: number;
+  onOpenCart?: () => void;
+  inlineOrder?: React.ReactNode;
+  contactBlockId?: string;
+  selectedId?: string;
+  onSelect?: (id: string, sectionId: string) => void;
 };
-
-function radius(theme: LandingPageTheme) {
-  if (theme.buttonStyle === "PILL") return "999px";
-  if (theme.buttonStyle === "SQUARE") return "0.25rem";
-  return "0.85rem";
-}
-
-export function contrastingButtonText(background: string) {
-  const channels = background
-    .replace("#", "")
-    .match(/.{2}/g)
-    ?.map((value) => {
-      const channel = Number.parseInt(value, 16) / 255;
-      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-    });
-  if (channels?.length !== 3) return "#ffffff";
-  const luminance =
-    (channels[0] ?? 0) * 0.2126 + (channels[1] ?? 0) * 0.7152 + (channels[2] ?? 0) * 0.0722;
-  return luminance > 0.179 ? "#000000" : "#ffffff";
-}
-
-function ActionLink({
-  href,
-  children,
-  secondary = false,
-  textColor,
-  theme,
-}: {
-  href: string;
-  children: React.ReactNode;
-  secondary?: boolean;
-  textColor?: string;
-  theme: LandingPageTheme;
-}) {
-  if (!href || !children) return null;
-  return (
-    <a
-      href={href}
-      className="inline-flex items-center justify-center px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5"
-      style={{
-        borderRadius: radius(theme),
-        background: secondary ? "transparent" : theme.primaryColor,
-        color:
-          textColor || (secondary ? theme.textColor : contrastingButtonText(theme.primaryColor)),
-        border: `1px solid ${secondary ? theme.textColor : theme.primaryColor}`,
-      }}
-    >
-      {children}
-    </a>
-  );
-}
-
-function Media({ url, title, className = "" }: { url: string; title: string; className?: string }) {
-  if (!url) return null;
-  const embed = getMenuMediaEmbed(url);
-  if (embed && embed.provider !== "Uploaded image")
-    return (
-      <iframe
-        src={embed.embedUrl}
-        title={title}
-        className={`h-full min-h-52 w-full border-0 ${className}`}
-        loading="lazy"
-        allow="autoplay; fullscreen"
-        allowFullScreen
-      />
+export function LandingPageRenderer(props: LandingRendererProps) {
+  const { theme, sections, catalogItems = [], mode = "PUBLIC", goal = "SHOP" } = props;
+  const [highlight, setHighlight] = useState("");
+  if (props.schemaVersion !== 2) return <LegacyRenderer {...props} />;
+  const firstHero = sections
+    .filter((s) => s.enabled)
+    .flatMap((s) => s.components.filter((c) => c.enabled))
+    .find((c) => c.type === "HERO")?.id;
+  const first = sections
+    .filter((s) => s.enabled)
+    .flatMap((s) => s.components.filter((c) => c.enabled))[0]?.id;
+  const hasInline =
+    goal === "SHOP" &&
+    Boolean(props.inlineOrder) &&
+    sections.some(
+      (s) =>
+        s.enabled &&
+        s.components.some((c) => c.enabled && c.appearance?.orderPresentation === "INLINE_SUMMARY"),
     );
-  return (
-    <StoredImage
-      src={url}
-      alt={title}
-      className={`h-full w-full object-cover ${className}`}
-      loading="lazy"
-    />
-  );
-}
-
-export function sectionScrollStyle(section: LandingPageSection): React.CSSProperties {
-  return section.maxHeight && section.maxHeight > 0
-    ? { maxHeight: section.maxHeight, overflowY: "auto", overflowX: "hidden" }
-    : {};
-}
-
-function CatalogItemsLayout({
-  children,
-  heading,
-  columns,
-  displayMode = "VERTICAL",
-  previewDevice,
-  count,
-}: {
-  children: React.ReactNode;
-  heading: string;
-  columns: 2 | 3 | 4;
-  displayMode?: LandingPageDisplayMode;
-  previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
-  count: number;
-}) {
-  const track = useRef<HTMLElement>(null);
-  const horizontal = displayMode === "HORIZONTAL";
-  const previewColumns = Math.min(
-    previewDevice === "MOBILE" ? 1 : previewDevice === "TABLET" ? 2 : columns,
-    count,
-  );
-  const gridClass =
-    columns === 4
-      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
-      : columns === 3
-        ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-        : "grid-cols-1 sm:grid-cols-2";
-  const carouselClass =
-    columns === 4
-      ? "lg:auto-cols-[calc((100%_-_3.75rem)/4)]"
-      : columns === 3
-        ? "lg:auto-cols-[calc((100%_-_2.5rem)/3)]"
-        : "lg:auto-cols-[calc((100%_-_1.25rem)/2)]";
-  function scroll(direction: number) {
-    const element = track.current;
-    if (!element) return;
-    element.scrollBy({
-      left: direction * element.clientWidth,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "instant"
-        : "smooth",
-    });
-  }
-  return (
-    <div className="mt-7 min-w-0">
-      {horizontal && count > 1 && (
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-xs opacity-65">Swipe or use the arrows to browse.</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              aria-label={`Previous ${heading} items`}
-              className="rounded-full border p-2 hover:opacity-70"
-              onClick={() => scroll(-1)}
-            >
-              <Icon icon="solar:alt-arrow-left-linear" />
-            </button>
-            <button
-              type="button"
-              aria-label={`Next ${heading} items`}
-              className="rounded-full border p-2 hover:opacity-70"
-              onClick={() => scroll(1)}
-            >
-              <Icon icon="solar:alt-arrow-right-linear" />
-            </button>
-          </div>
-        </div>
-      )}
-      <section
-        ref={track}
-        aria-label={horizontal ? `${heading} carousel` : `${heading} items`}
-        tabIndex={horizontal ? 0 : undefined}
-        className={`grid min-w-0 gap-5 ${horizontal ? `grid-flow-col auto-cols-[85%] snap-x snap-mandatory overflow-x-auto pb-3 ${previewDevice ? "" : `sm:auto-cols-[calc((100%_-_1.25rem)/2)] ${carouselClass}`}` : previewDevice ? "" : gridClass}`}
+  const context: StorefrontContext = {
+    theme,
+    goal,
+    sections,
+    catalogItems,
+    cartCount: props.cartCount,
+    onOpenCart: props.onOpenCart,
+    onAdd: mode === "EDIT" ? undefined : props.onAddToCart,
+    inlineOrder: props.inlineOrder,
+    highlightKey: highlight,
+    onHighlight: setHighlight,
+  };
+  const fonts = {
+    LEGACY:
+      theme.fontStyle === "CLASSIC"
+        ? "var(--font-display), Georgia, serif"
+        : "var(--font-sans), sans-serif",
+    DISPLAY_CONDENSED: '"Arial Narrow", "Franklin Gothic Medium", Impact, sans-serif',
+    EDITORIAL_SERIF: 'Georgia, "Times New Roman", serif',
+    MODERN_GROTESK: "var(--font-sans), Arial, sans-serif",
+  };
+  const style = {
+    "--lp-primary": theme.primaryColor,
+    "--lp-bg": theme.backgroundColor,
+    "--lp-surface": theme.surfaceColor,
+    "--lp-ink": theme.textColor,
+    "--lp-accent": theme.accentColor ?? theme.primaryColor,
+    "--lp-muted": theme.mutedTextColor ?? theme.textColor,
+    "--lp-border": theme.borderColor ?? `${theme.primaryColor}30`,
+    "--lp-display": fonts[theme.displayFont ?? "LEGACY"],
+    fontFamily: theme.bodyFont === "SYSTEM" ? "system-ui, sans-serif" : undefined,
+    "--lp-max": `${theme.contentMaxWidth ?? 1280}px`,
+    "--lp-action-ink": buttonInk(theme.primaryColor),
+    "--lp-button-radius":
+      theme.buttonStyle === "PILL" ? "999px" : theme.buttonStyle === "SQUARE" ? "2px" : "8px",
+    background: theme.backgroundColor,
+    color: theme.textColor,
+  } as React.CSSProperties;
+  function view(block: LandingPageComponent, section: LandingPageSection) {
+    const selected = props.selectedId === block.id;
+    const content = (
+      <MotionBlock settings={block.motion}>
+        <StorefrontBlock
+          block={block}
+          context={{
+            ...context,
+            primaryHero: block.id === firstHero,
+            background:
+              section.background ?? (block.id === firstHero ? theme.background : undefined),
+          }}
+        />
+      </MotionBlock>
+    );
+    return (
+      <div
+        key={block.id}
+        data-block-id={block.id}
+        data-mobile-columns={block.appearance?.mobile?.columns}
+        data-mobile-padding={block.appearance?.mobile?.padding?.toLowerCase()}
         style={
-          previewDevice
-            ? horizontal
-              ? {
-                  gridAutoColumns:
-                    previewDevice === "MOBILE" && count > 1
-                      ? "85%"
-                      : `calc((100% - ${(previewColumns - 1) * 1.25}rem) / ${previewColumns})`,
-                }
-              : { gridTemplateColumns: `repeat(${previewColumns}, minmax(0, 1fr))` }
+          {
+            "--lp-action-ink": block.buttonTextColor ?? buttonInk(theme.primaryColor),
+            textAlign: block.appearance?.alignment?.toLowerCase() as
+              | "left"
+              | "center"
+              | "right"
+              | undefined,
+          } as React.CSSProperties
+        }
+        data-highlighted={highlight ? block.type === "CATALOG" : undefined}
+        className={`lp-block lp-width-${block.width.toLowerCase()} lp-layout-${block.appearance?.layout?.toLowerCase() ?? "default"} ${mode === "EDIT" ? "lp-edit-block" : ""} ${selected ? "lp-selected" : ""} ${!block.enabled ? "lp-hidden-block" : ""}`}
+        onClickCapture={
+          mode === "EDIT"
+            ? (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                props.onSelect?.(block.id, section.id);
+              }
             : undefined
         }
       >
-        {children}
-      </section>
-    </div>
-  );
-}
-
-function MenuSection({
-  component,
-  menuItems,
-  theme,
-  previewDevice,
-  inSection,
-  onAddToCart,
-}: {
-  component: Extract<LandingPageComponent, { type: "MENU" }>;
-  menuItems: LandingMenuItem[];
-  theme: LandingPageTheme;
-  previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
-  inSection?: boolean;
-  onAddToCart?: (item: LandingCatalogItem) => void;
-}) {
-  const items: LandingCatalogItem[] = menuItems
-    .filter((item) => item.showOnLandingPage !== false)
-    .map((item) => ({
-      key: `MENU_ITEM:${item._id}`,
-      sourceType: "MENU_ITEM",
-      sourceId: item._id,
-      name: item.name,
-      description: "",
-      category: item.category || "Food",
-      productType: "FOOD",
-      mediaUrls: getMenuMediaUrls(item),
-      price: item.sellingPricePerServing ?? "0",
-      variants: [],
-      isFeatured: false,
-      isAvailable: item.isAvailable === true,
-    }));
-  return (
-    <CatalogSection
-      component={component}
-      catalogItems={items}
-      theme={theme}
-      previewDevice={previewDevice}
-      inSection={inSection}
-      onAddToCart={onAddToCart}
-    />
-  );
-}
-
-function CatalogSection({
-  component,
-  catalogItems,
-  theme,
-  previewDevice,
-  inSection,
-  onAddToCart,
-}: {
-  component: Extract<LandingPageComponent, { type: "CATALOG" | "MENU" }>;
-  catalogItems: LandingCatalogItem[];
-  theme: LandingPageTheme;
-  previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
-  inSection?: boolean;
-  onAddToCart?: (item: LandingCatalogItem) => void;
-}) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const searchTerm = search.trim().toLocaleLowerCase();
-  const searchLabel = component.type === "MENU" ? "Search menu items" : "Search products";
-  const groups = new Map<string, { name: string; items: LandingCatalogItem[] }>();
-  for (const item of catalogItems) {
-    const name = item.category?.trim() || item.productType.replaceAll("_", " ");
-    const key = name.toLocaleLowerCase();
-    const group = groups.get(key) ?? { name, items: [] };
-    group.items.push(item);
-    groups.set(key, group);
-  }
-  const activeCategory = selectedCategory && groups.has(selectedCategory) ? selectedCategory : null;
-  const visibleGroups = [...groups]
-    .filter(([key]) => !activeCategory || key === activeCategory)
-    .map(
-      ([key, group]) =>
-        [
-          key,
-          {
-            ...group,
-            items: group.items.filter((item) =>
-              [
-                item.name,
-                item.description,
-                group.name,
-                ...item.variants.map((variant) => variant.name),
-              ]
-                .join(" ")
-                .toLocaleLowerCase()
-                .includes(searchTerm),
-            ),
-          },
-        ] as const,
-    )
-    .filter(([, group]) => group.items.length > 0);
-  const now = useCatalogPricingClock(catalogItems.map((item) => item.discount));
-  return (
-    <section
-      id={component.type === "MENU" ? "menu" : "products"}
-      className={inSection ? "" : "px-6 py-12 sm:px-10"}
-    >
-      <div className="mx-auto max-w-6xl">
-        <h2 className="text-3xl font-bold">{component.content.heading}</h2>
-        {component.content.body && (
-          <p className="mt-3 max-w-2xl opacity-70">{component.content.body}</p>
-        )}
-        <div className="mt-6 flex min-w-0 items-end gap-2">
-          <label className="block min-w-0 flex-1">
-            <span className="mb-2 block text-sm font-semibold">{searchLabel}</span>
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={
-                component.type === "MENU"
-                  ? "Search dishes or categories…"
-                  : "Search products or categories…"
-              }
-              className="w-full min-w-0 rounded-xl border px-4 py-3 text-sm outline-offset-2"
-              style={{ background: theme.surfaceColor, color: theme.textColor }}
-            />
-          </label>
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              className="shrink-0 rounded-xl border px-3 py-3 text-sm font-semibold"
-            >
-              Clear search
-            </button>
-          )}
-        </div>
-        {catalogItems.length ? (
-          <>
-            <nav
-              aria-label={component.type === "MENU" ? "Menu categories" : "Product categories"}
-              className="mt-6 flex gap-2 overflow-x-auto pb-3"
-            >
-              {[
-                { key: null, name: "All" },
-                ...[...groups].map(([key, group]) => ({ key, name: group.name })),
-              ].map((category) => (
-                <button
-                  key={category.key ?? "all-categories"}
-                  type="button"
-                  aria-pressed={activeCategory === category.key}
-                  className="shrink-0 rounded-full border px-5 py-2 text-sm font-semibold"
-                  style={
-                    activeCategory === category.key
-                      ? {
-                          background: theme.primaryColor,
-                          color:
-                            component.buttonTextColor || contrastingButtonText(theme.primaryColor),
-                          borderColor: theme.primaryColor,
-                        }
-                      : { color: "inherit" }
-                  }
-                  onClick={() => setSelectedCategory(category.key)}
-                >
-                  {category.name}
-                </button>
-              ))}
-            </nav>
-            {!visibleGroups.length && (
-              <p
-                role="status"
-                className="mt-6 rounded-xl border border-dashed p-6 text-center text-sm"
-              >
-                No matching items{activeCategory ? " in this category" : ""}. Try another search
-                {activeCategory ? " or choose All" : ""}.
-              </p>
-            )}
-            {visibleGroups.map(([key, group]) => (
-              <section key={key} aria-label={group.name} className="mt-6 min-w-0">
-                <h3 className="text-xl font-bold">{group.name}</h3>
-                <CatalogItemsLayout
-                  heading={group.name}
-                  columns={component.content.columns}
-                  displayMode="HORIZONTAL"
-                  previewDevice={previewDevice}
-                  count={group.items.length}
-                >
-                  {group.items.map((item) => (
-                    <article
-                      key={item.key}
-                      className="min-w-0 snap-start overflow-hidden border shadow-sm"
-                      style={{
-                        background: theme.surfaceColor,
-                        borderColor: `${theme.primaryColor}25`,
-                        borderRadius: "1.25rem",
-                      }}
-                    >
-                      {item.mediaUrls[0] && (
-                        <div className="h-44 overflow-hidden">
-                          <Media url={item.mediaUrls[0]} title={item.name} />
-                        </div>
-                      )}
-                      <div className="p-5">
-                        <p
-                          className="text-xs font-bold uppercase tracking-widest"
-                          style={{ color: theme.primaryColor }}
-                        >
-                          {item.category || item.productType.replaceAll("_", " ")}
-                        </p>
-                        <h3 className="mt-1 text-lg font-bold">{item.name}</h3>
-                        {item.description && (
-                          <p className="mt-2 line-clamp-2 text-sm opacity-65">{item.description}</p>
-                        )}
-                        <div className="mt-3" style={{ color: theme.primaryColor }}>
-                          <CatalogDiscountPrice
-                            liveCountdown
-                            now={now}
-                            from={item.variants.length > 0}
-                            pricing={
-                              item.variants.length
-                                ? {
-                                    ...[...item.variants].sort(
-                                      (left, right) =>
-                                        effectivePrice(left, now, item.discount) -
-                                        effectivePrice(right, now, item.discount),
-                                    )[0],
-                                    discount: item.discount,
-                                  }
-                                : item
-                            }
-                          />
-                        </div>
-                        {onAddToCart && (
-                          <button
-                            type="button"
-                            className="mt-4 w-full px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                            style={{
-                              background: theme.primaryColor,
-                              color:
-                                component.buttonTextColor ||
-                                contrastingButtonText(theme.primaryColor),
-                              borderRadius: radius(theme),
-                            }}
-                            disabled={!item.isAvailable}
-                            onClick={() => onAddToCart(item)}
-                          >
-                            {item.isAvailable
-                              ? item.variants.length
-                                ? "Choose options"
-                                : "Add to cart"
-                              : "Unavailable"}
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  ))}
-                </CatalogItemsLayout>
-              </section>
-            ))}
-          </>
-        ) : (
-          <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
-            {component.type === "MENU"
-              ? "No menu items are available yet."
-              : "No catalog items are available yet."}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-export function LandingPageComponentView({
-  component,
-  menuItems,
-  catalogItems = [],
-  onAddToCart,
-  theme,
-  previewDevice,
-  inSection = false,
-}: {
-  component: LandingPageComponent;
-  menuItems: LandingMenuItem[];
-  catalogItems?: LandingCatalogItem[];
-  onAddToCart?: (item: LandingCatalogItem) => void;
-  theme: LandingPageTheme;
-  previewDevice?: "DESKTOP" | "TABLET" | "MOBILE";
-  inSection?: boolean;
-}) {
-  if (component.type === "HERO")
-    return (
-      <section
-        className={`grid min-h-[420px] items-center gap-8 ${inSection ? "" : "px-6 py-14 sm:px-10"} ${previewDevice === "MOBILE" ? "grid-cols-1" : previewDevice ? "grid-cols-2" : "lg:grid-cols-2"}`}
-      >
-        <div className="mx-auto w-full max-w-xl lg:ml-auto lg:mr-0">
-          {component.content.eyebrow && (
-            <p
-              className="text-xs font-bold uppercase tracking-[.25em]"
-              style={{ color: theme.primaryColor }}
-            >
-              {component.content.eyebrow}
-            </p>
-          )}
-          <h1 className="mt-4 text-4xl font-bold leading-tight sm:text-5xl">
-            {component.content.title}
+        {!firstHero && block.id === first && (
+          <h1 className="lp-sr-only">
+            {block.type === "HEADER" ? block.content.brand : section.name}
           </h1>
-          {component.content.body && (
-            <p className="mt-5 text-lg leading-relaxed opacity-70">{component.content.body}</p>
-          )}
-          <div className="mt-7 flex flex-wrap gap-3">
-            <ActionLink
-              textColor={component.buttonTextColor}
-              href={component.content.primaryUrl}
-              theme={theme}
-            >
-              {component.content.primaryLabel}
-            </ActionLink>
-            <ActionLink
-              textColor={component.buttonTextColor}
-              href={component.content.secondaryUrl}
-              theme={theme}
-              secondary
-            >
-              {component.content.secondaryLabel}
-            </ActionLink>
-          </div>
-        </div>
-        {component.content.mediaUrl ? (
-          <div className="min-h-72 overflow-hidden shadow-xl" style={{ borderRadius: "2rem" }}>
-            <Media url={component.content.mediaUrl} title={component.content.title} />
-          </div>
-        ) : (
-          <div
-            className="grid min-h-72 place-items-center rounded-[2rem] border border-dashed"
-            style={{
-              borderColor: `${theme.primaryColor}55`,
-              background: `${theme.primaryColor}10`,
-            }}
-          >
-            <Icon
-              icon="mdi:pig-variant"
-              className="size-24"
-              style={{ color: `${theme.primaryColor}80` }}
-            />
-          </div>
         )}
-      </section>
-    );
-  if (component.type === "TEXT")
-    return (
-      <section
-        className={`${inSection ? "" : "px-6 py-12 sm:px-10"} ${component.content.alignment === "CENTER" ? "text-center" : ""}`}
-      >
-        <div className="mx-auto max-w-4xl">
-          <h2 className="text-3xl font-bold">{component.content.heading}</h2>
-          <p className="mt-4 whitespace-pre-line leading-7 opacity-75">{component.content.body}</p>
-        </div>
-      </section>
-    );
-  if (component.type === "MENU")
-    return (
-      <MenuSection
-        component={component}
-        menuItems={menuItems}
-        theme={theme}
-        previewDevice={previewDevice}
-        inSection={inSection}
-        onAddToCart={onAddToCart}
-      />
-    );
-  if (component.type === "CATALOG")
-    return (
-      <CatalogSection
-        component={component}
-        catalogItems={catalogItems}
-        theme={theme}
-        previewDevice={previewDevice}
-        inSection={inSection}
-        onAddToCart={onAddToCart}
-      />
-    );
-  if (component.type === "GALLERY")
-    return (
-      <section className={inSection ? "" : "px-6 py-12 sm:px-10"}>
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold">{component.content.heading}</h2>
-          {component.content.mediaUrls.length ? (
-            <div
-              className={`mt-7 grid gap-4 ${previewDevice ? "" : component.content.columns === 4 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" : component.content.columns === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}
-              style={
-                previewDevice
-                  ? {
-                      gridTemplateColumns: `repeat(${previewDevice === "MOBILE" ? 1 : previewDevice === "TABLET" ? 2 : component.content.columns}, minmax(0, 1fr))`,
-                    }
-                  : undefined
-              }
-            >
-              {component.content.mediaUrls.map((url, index) => (
-                <div key={url} className="h-56 overflow-hidden rounded-2xl">
-                  <Media url={url} title={`${component.content.heading} ${index + 1}`} />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-6 rounded-2xl border border-dashed p-8 text-center text-sm opacity-60">
-              Add public media links to build the gallery.
-            </div>
-          )}
-        </div>
-      </section>
-    );
-  if (component.type === "CONTACT")
-    return (
-      <section id="contact" className={inSection ? "" : "px-6 py-12 sm:px-10"}>
-        <div
-          className="mx-auto grid max-w-5xl gap-8 rounded-3xl p-8 sm:grid-cols-2"
-          style={{ background: theme.surfaceColor }}
-        >
-          <div>
-            <p
-              className="text-xs font-bold uppercase tracking-widest"
-              style={{ color: theme.primaryColor }}
-            >
-              Get in touch
-            </p>
-            <h2 className="mt-2 text-3xl font-bold">{component.content.heading}</h2>
-            <p className="mt-4 opacity-70">{component.content.body}</p>
-          </div>
-          <div className="space-y-3 text-sm">
-            {component.content.address && (
-              <p>
-                <strong>Address:</strong> {component.content.address}
-              </p>
-            )}
-            {component.content.phone && (
-              <p>
-                <strong>Phone:</strong>{" "}
-                <a href={`tel:${component.content.phone}`}>{component.content.phone}</a>
-              </p>
-            )}
-            {component.content.email && (
-              <p>
-                <strong>Email:</strong>{" "}
-                <a href={`mailto:${component.content.email}`}>{component.content.email}</a>
-              </p>
-            )}
-            {component.content.hours && (
-              <p className="whitespace-pre-line">
-                <strong>Hours:</strong> {component.content.hours}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-3 pt-2">
-              {component.content.facebookUrl && (
-                <a
-                  href={component.content.facebookUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-bold"
-                  style={{ color: theme.primaryColor }}
-                >
-                  Facebook
-                </a>
-              )}
-              {component.content.instagramUrl && (
-                <a
-                  href={component.content.instagramUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-bold"
-                  style={{ color: theme.primaryColor }}
-                >
-                  Instagram
-                </a>
-              )}
-              {component.content.mapUrl && (
-                <a
-                  href={component.content.mapUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-bold"
-                  style={{ color: theme.primaryColor }}
-                >
-                  Open map
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  return (
-    <section className={`${inSection ? "" : "px-6 py-12 sm:px-10"} text-center`}>
-      <div
-        className="mx-auto max-w-4xl rounded-3xl px-8 py-12 text-white"
-        style={{ background: theme.primaryColor }}
-      >
-        <h2 className="text-3xl font-bold">{component.content.heading}</h2>
-        <p className="mx-auto mt-3 max-w-2xl opacity-85">{component.content.body}</p>
-        <div className="mt-6">
-          <ActionLink
-            textColor={component.buttonTextColor}
-            href={component.content.buttonUrl}
-            theme={{ ...theme, primaryColor: theme.surfaceColor, textColor: "white" }}
+        {mode === "EDIT" && (
+          <button
+            type="button"
+            className="lp-select-control"
+            aria-label={`Select ${block.type.toLowerCase()} block`}
+            onClick={() => props.onSelect?.(block.id, section.id)}
           >
-            {component.content.buttonLabel}
-          </ActionLink>
-        </div>
+            {block.type.replaceAll("_", " ")}
+          </button>
+        )}
+        {content}
       </div>
-    </section>
+    );
+  }
+  return (
+    <LandingMotionProvider mode={mode} level={theme.motionLevel}>
+      <div
+        className={`lp-storefront lp-template-${props.template?.id ?? "custom"} lp-mode-${mode.toLowerCase()}`}
+        style={style}
+      >
+        {sections
+          .filter((s) => mode === "EDIT" || s.enabled)
+          .map((section) => {
+            const blocks = section.components
+              .filter((c) => mode === "EDIT" || c.enabled)
+              .filter((c) => !hasInline || mode === "EDIT" || c.id !== props.contactBlockId);
+            if (!blocks.length) return null;
+            return (
+              <section
+                key={section.id}
+                id={section.id}
+                aria-label={section.name}
+                className={`lp-section lp-padding-${section.padding.toLowerCase()} lp-gap-${section.gap.toLowerCase()} lp-section-${section.layoutVariant?.toLowerCase() ?? "default"} ${!section.enabled ? "lp-hidden-block" : ""}`}
+                data-mobile-padding={section.mobile?.padding.toLowerCase()}
+                data-mobile-gap={section.mobile?.gap.toLowerCase()}
+                style={{
+                  background: section.backgroundColor || undefined,
+                  color: section.textColor || undefined,
+                  ...sectionScrollStyle(section),
+                }}
+              >
+                {section.background && !blocks.some((c) => c.type === "HERO") && (
+                  <LandingBackground settings={section.background} />
+                )}
+                {section.anchor && section.anchor !== section.id && <span id={section.anchor} />}
+                <div
+                  className={`lp-section-content lp-content-${section.contentWidth.toLowerCase()}`}
+                >
+                  <MotionBlock settings={section.motion}>
+                    <div className="lp-block-grid">{blocks.map((c) => view(c, section))}</div>
+                  </MotionBlock>
+                </div>
+              </section>
+            );
+          })}
+      </div>
+    </LandingMotionProvider>
   );
 }
-
-export function LandingPageRenderer({
-  theme,
-  sections,
-  menuItems,
-  catalogItems = [],
-  onAddToCart,
-  compact = false,
-}: LandingPageRendererProps) {
-  const enabledSections = sections.filter((section) => section.enabled);
-  const enabledCount = enabledSections.reduce(
-    (count, section) => count + section.components.filter((component) => component.enabled).length,
-    0,
-  );
-  return (
-    <div
-      className={`min-h-full overflow-hidden ${theme.fontStyle === "CLASSIC" ? "font-display" : "font-sans"}`}
-      style={{
-        background: theme.backgroundColor,
-        color: theme.textColor,
-        fontSize: compact ? "0.82rem" : undefined,
-      }}
-    >
-      {enabledSections.map((section) => {
-        const components = section.components.filter((component) => component.enabled);
-        const widthClass =
-          section.contentWidth === "FULL"
-            ? "max-w-none"
-            : section.contentWidth === "CONTAINED"
-              ? "mx-auto max-w-5xl"
-              : "mx-auto max-w-7xl";
-        const paddingClass =
-          section.padding === "NONE"
-            ? ""
-            : section.padding === "SMALL"
-              ? "px-4 py-5 sm:px-6"
-              : section.padding === "LARGE"
-                ? "px-6 py-16 sm:px-10"
-                : "px-5 py-10 sm:px-8";
-        const gapClass =
-          section.gap === "NONE"
-            ? "gap-0"
-            : section.gap === "SMALL"
-              ? "gap-3"
-              : section.gap === "LARGE"
-                ? "gap-10"
-                : "gap-6";
-        return (
-          <section
-            key={section.id}
-            id={section.id}
-            aria-label={section.name}
-            tabIndex={section.maxHeight ? 0 : undefined}
-            style={{
-              ...sectionScrollStyle(section),
-              background: section.backgroundColor || "transparent",
-              color: section.textColor || "inherit",
-            }}
-          >
-            <div className={`${widthClass} ${paddingClass}`}>
-              <div className={`grid grid-cols-12 ${gapClass}`}>
-                {components.map((component) => (
-                  <div
-                    key={component.id}
-                    className={`min-w-0 ${
-                      component.width === "FULL"
-                        ? "col-span-12"
-                        : component.width === "TWO_THIRDS"
-                          ? "col-span-12 md:col-span-8"
-                          : component.width === "HALF"
-                            ? "col-span-12 md:col-span-6"
-                            : "col-span-12 md:col-span-4"
-                    }`}
-                  >
-                    <LandingPageComponentView
-                      component={component}
-                      menuItems={menuItems}
-                      catalogItems={catalogItems}
-                      onAddToCart={onAddToCart}
-                      theme={theme}
-                      inSection
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        );
-      })}
-      {!enabledCount && (
-        <div className="grid min-h-96 place-items-center p-8 text-center opacity-60">
-          Add a component to start building your page.
-        </div>
-      )}
-    </div>
-  );
+function buttonInk(color: string) {
+  const rgb = color
+    .slice(1)
+    .match(/../g)
+    ?.map((n) => {
+      const c = parseInt(n, 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    }) ?? [0, 0, 0];
+  return 0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]! > 0.179 ? "#151713" : "#FFFFFF";
 }

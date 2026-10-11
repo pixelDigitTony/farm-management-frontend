@@ -5,7 +5,11 @@ import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "@/api/client";
 import { CatalogDiscountPrice, LiveDiscountCountdown } from "@/components/CatalogDiscountPrice";
-import { LandingPageRenderer } from "@/components/landing-page/LandingPageRenderer";
+import { StorefrontBlock } from "@/components/landing-page/blocks/StorefrontBlocks";
+import {
+  contrastingButtonText,
+  LandingPageRenderer,
+} from "@/components/landing-page/LandingPageRenderer";
 import { StoredImage } from "@/components/StoredImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -20,6 +24,7 @@ import type {
   LandingPageCommerceSettings,
   LandingPageSection,
   LandingPageTheme,
+  TemplateId,
 } from "@/types/landing-page";
 import { defaultLandingPageCommerceSettings, normalizeLandingSections } from "@/types/landing-page";
 
@@ -30,6 +35,9 @@ type PublicLandingPage = {
   seoDescription: string;
   publishedAt: string;
   variant: {
+    schemaVersion?: 1 | 2;
+    template?: { id: TemplateId; revision: number };
+    goal?: "SHOP" | "CATALOG" | "INQUIRY";
     theme: LandingPageTheme;
     commerce?: Partial<LandingPageCommerceSettings>;
     sections?: LandingPageSection[];
@@ -214,24 +222,41 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     },
   });
 
-  function addLine(item: LandingCatalogItem, variant?: LandingCatalogVariant) {
+  function addLine(
+    item: LandingCatalogItem,
+    variant?: LandingCatalogVariant,
+    quantity = 1,
+    shopNow = false,
+  ) {
+    if (!item.isAvailable || (variant && !variant.isAvailable) || order.isPending) return;
+    setSuccess(undefined);
     const line = lineFromItem(item, variant, now);
+    line.quantity = Math.max(1, Math.min(99, quantity));
     setCart((current) => {
       const existing = current.find((candidate) => candidate.key === line.key);
       if (!existing) return [...current, line];
       return current.map((candidate) =>
         candidate.key === line.key
-          ? { ...candidate, quantity: Math.min(99, candidate.quantity + 1) }
+          ? { ...candidate, quantity: Math.min(99, candidate.quantity + line.quantity) }
           : candidate,
       );
     });
     setChoosing(undefined);
-    setCartOpen(true);
+    if (page.data?.variant.schemaVersion !== 2 || shopNow) {
+      setSuccess(undefined);
+      setCheckout(false);
+      setCartOpen(true);
+    }
   }
 
-  function handleAdd(item: LandingCatalogItem) {
-    if (item.variants.length) setChoosing(item);
-    else addLine(item);
+  function handleAdd(
+    item: LandingCatalogItem,
+    variant?: LandingCatalogVariant,
+    quantity = 1,
+    shopNow = false,
+  ) {
+    if (item.variants.length && !variant) setChoosing(item);
+    else addLine(item, variant, quantity, shopNow);
   }
 
   function changeQuantity(key: string, quantity: number) {
@@ -311,14 +336,192 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       defaultLandingPageCommerceSettings.paymentMethods,
   };
   const minimumReached = cartTotal >= commerce.minimumOrder;
+  if (page.data.variant.schemaVersion === 2 && page.data.variant.goal !== "SHOP")
+    commerce.orderingEnabled = false;
+  const sections = normalizeLandingSections(page.data.variant);
+  const inline =
+    page.data.variant.schemaVersion === 2 &&
+    commerce.orderingEnabled &&
+    sections.some(
+      (s) =>
+        s.enabled &&
+        s.components.some((c) => c.enabled && c.appearance?.orderPresentation === "INLINE_SUMMARY"),
+    );
+  const contactSection = sections.find(
+    (s) =>
+      s.enabled &&
+      s.components.some(
+        (c) => c.enabled && c.id === commerce.contactBlockId && c.type === "CONTACT",
+      ),
+  );
+  const contact = sections
+    .filter((s) => s.enabled)
+    .flatMap((s) => s.components)
+    .find((c) => c.id === commerce.contactBlockId && c.type === "CONTACT" && c.enabled);
+  const openCart = () => {
+    setSuccess(undefined);
+    setCheckout(false);
+    setCartOpen(true);
+  };
+  async function beginCheckout() {
+    setCheckingPrices(true);
+    const result = await page.refetch();
+    setCheckingPrices(false);
+    if (result.isError) {
+      toast.error("Unable to refresh prices. Please try again.");
+      return;
+    }
+    setReviewedPrices(pricingSignature);
+    setPriceNotice("");
+    setSuccess(undefined);
+    setCheckout(true);
+  }
+  const inlineOrder = inline ? (
+    <div className="space-y-5">
+      <h3>Shopping cart summary</h3>
+      <p role="status" className="text-sm">
+        {cartCount
+          ? `${cartCount} items in your cart`
+          : "Your cart is empty. Choose from the collection."}
+      </p>
+      {pricedCart.map((line) => (
+        <div key={line.key} className="border-b pb-4 text-sm">
+          <strong>{line.name}</strong>
+          {line.variantName && <p>{line.variantName}</p>}
+          <p>{formatPeso(line.unitPrice)} each</p>
+          {line.unavailable && <p role="alert">Unavailable — remove this item</p>}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              size="icon"
+              variant="outline"
+              disabled={order.isPending}
+              aria-label={`Remove one ${line.name}`}
+              onClick={() => changeQuantity(line.key, line.quantity - 1)}
+            >
+              −
+            </Button>
+            <span>{line.quantity}</span>
+            <Button
+              size="icon"
+              variant="outline"
+              disabled={order.isPending || line.quantity >= 99 || line.unavailable}
+              aria-label={`Add one ${line.name}`}
+              onClick={() => changeQuantity(line.key, line.quantity + 1)}
+            >
+              +
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={order.isPending}
+              onClick={() => changeQuantity(line.key, 0)}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      ))}
+      <p className="flex justify-between">
+        <strong>Subtotal</strong>
+        <strong>{formatPeso(cartTotal)}</strong>
+      </p>
+      {commerce.deliveryFee > 0 && (
+        <p className="text-sm">Delivery fee, if selected: {formatPeso(commerce.deliveryFee)}</p>
+      )}
+      {!minimumReached && (
+        <p role="status" className="text-sm">
+          Minimum order: {formatPeso(commerce.minimumOrder)}
+        </p>
+      )}
+      {success ? (
+        <div role="status">
+          <strong>Order received: {success.orderNumber}</strong>
+          <p>Total: {formatPeso(success.total)}</p>
+        </div>
+      ) : checkout && !cartOpen ? (
+        <>
+          {(pricesNeedReview || priceNotice) && (
+            <div role="alert">
+              <p>{priceNotice || "Prices changed. Review the updated total."}</p>
+              <Button
+                disabled={page.isFetching}
+                onClick={() => {
+                  setReviewedPrices(pricingSignature);
+                  setPriceNotice("");
+                }}
+              >
+                I reviewed the updated total
+              </Button>
+            </div>
+          )}
+          <CheckoutForm
+            subtotal={cartTotal}
+            theme={page.data.variant.schemaVersion === 2 ? page.data.variant.theme : undefined}
+            settings={commerce}
+            pending={order.isPending || page.isFetching}
+            blocked={
+              pricesNeedReview ||
+              Boolean(priceNotice) ||
+              pricedCart.some((l) => l.unavailable) ||
+              !minimumReached
+            }
+            onBack={() => setCheckout(false)}
+            onSubmit={submitOrder}
+          />
+        </>
+      ) : (
+        <Button
+          className="w-full"
+          style={{
+            background: page.data.variant.theme.primaryColor,
+            color: contrastingButtonText(page.data.variant.theme.primaryColor),
+            whiteSpace: "normal",
+            height: "auto",
+            minHeight: 44,
+          }}
+          disabled={
+            !cart.length ||
+            !minimumReached ||
+            checkingPrices ||
+            pricedCart.some((l) => l.unavailable)
+          }
+          onClick={() => void beginCheckout()}
+        >
+          {checkingPrices ? "Checking prices…" : "Review and place order"}
+        </Button>
+      )}
+      {contact && (
+        <div id={contactSection?.id} className="border-t pt-5">
+          {contactSection?.anchor && contactSection.anchor !== contactSection.id && (
+            <span id={contactSection.anchor} />
+          )}
+          <StorefrontBlock
+            block={contact}
+            context={{
+              theme: page.data.variant.theme,
+              goal: page.data.variant.goal ?? "SHOP",
+              sections,
+              catalogItems: page.data.catalogItems ?? [],
+            }}
+          />
+        </div>
+      )}
+    </div>
+  ) : undefined;
   return (
     <>
       <LandingPageRenderer
         theme={page.data.variant.theme}
-        sections={normalizeLandingSections(page.data.variant)}
+        schemaVersion={page.data.variant.schemaVersion}
+        template={page.data.variant.template}
+        goal={page.data.variant.goal}
+        sections={sections}
         menuItems={page.data.menuItems}
         catalogItems={page.data.catalogItems ?? []}
         onAddToCart={commerce.orderingEnabled ? handleAdd : undefined}
+        cartCount={cartCount}
+        onOpenCart={openCart}
+        inlineOrder={inlineOrder}
+        contactBlockId={commerce.contactBlockId}
       />
       {commerce.orderingEnabled && (page.data.catalogItems?.length ?? 0) > 0 && (
         <button
@@ -326,7 +529,10 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
           className={`fixed bottom-5 z-40 flex items-center gap-3 rounded-full px-5 py-3 font-bold text-white shadow-2xl transition hover:-translate-y-0.5 ${
             commerce.cartButtonPosition === "BOTTOM_LEFT" ? "left-5" : "right-5"
           }`}
-          style={{ background: page.data.variant.theme.primaryColor }}
+          style={{
+            background: page.data.variant.theme.primaryColor,
+            color: contrastingButtonText(page.data.variant.theme.primaryColor),
+          }}
           onClick={() => {
             setSuccess(undefined);
             setCheckout(false);
@@ -438,6 +644,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
               )}
               <CheckoutForm
                 subtotal={cartTotal}
+                theme={page.data.variant.schemaVersion === 2 ? page.data.variant.theme : undefined}
                 settings={commerce}
                 pending={order.isPending || page.isFetching}
                 blocked={
@@ -554,6 +761,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
 
 function CheckoutForm({
   subtotal,
+  theme,
   settings,
   pending,
   blocked,
@@ -561,6 +769,7 @@ function CheckoutForm({
   onSubmit,
 }: {
   subtotal: number;
+  theme?: LandingPageTheme;
   settings: LandingPageCommerceSettings;
   pending: boolean;
   blocked: boolean;
@@ -598,6 +807,16 @@ function CheckoutForm({
               key={option}
               type="button"
               className={`rounded-xl border p-3 text-sm font-semibold ${method === option ? "border-pink-600 bg-pink-50 text-pink-700" : "border-stone-200"}`}
+              aria-pressed={method === option}
+              style={
+                theme && method === option
+                  ? {
+                      background: theme.primaryColor,
+                      color: contrastingButtonText(theme.primaryColor),
+                      borderColor: theme.primaryColor,
+                    }
+                  : undefined
+              }
               onClick={() => setMethod(option)}
             >
               {option === "PICKUP" ? "Pickup" : "Delivery"}
@@ -656,7 +875,16 @@ function CheckoutForm({
         <Button type="button" className="flex-1" variant="outline" onClick={onBack}>
           Back to cart
         </Button>
-        <Button type="submit" className="flex-1" disabled={pending || blocked}>
+        <Button
+          type="submit"
+          className="flex-1"
+          style={
+            theme
+              ? { background: theme.primaryColor, color: contrastingButtonText(theme.primaryColor) }
+              : undefined
+          }
+          disabled={pending || blocked}
+        >
           {pending ? "Submitting..." : "Place order"}
         </Button>
       </div>

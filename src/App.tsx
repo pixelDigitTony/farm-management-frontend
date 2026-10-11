@@ -42,6 +42,9 @@ const CalendarTodosPage = lazy(() =>
 const LandingPageBuilderPage = lazy(() =>
   import("@/pages/LandingPageBuilderPage").then((m) => ({ default: m.LandingPageBuilderPage })),
 );
+const LandingPreviewPage = lazy(() =>
+  import("@/pages/LandingPreviewPage").then((m) => ({ default: m.LandingPreviewPage })),
+);
 const CatalogPage = lazy(() =>
   import("@/pages/CatalogPage").then((m) => ({ default: m.CatalogPage })),
 );
@@ -175,6 +178,7 @@ export function App() {
       }
     >
       <Routes>
+        <Route path="/landing-preview" element={<LandingPreviewPage />} />
         <Route path="/login" element={<AuthPage />} />
         {/* <Route path="/register" element={<RegisterPage />} /> */}
         <Route path="/verify-email" element={<VerifyEmailPage />} />
