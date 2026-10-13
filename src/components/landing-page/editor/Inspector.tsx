@@ -76,7 +76,7 @@ export function InspectorSelect({
 }) {
   return (
     <InspectorField label={label}>
-      <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <select aria-label={label} value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
         {values.map((v) => (
           <option key={v} value={v}>
             {fieldName(String(v).toLowerCase())}
@@ -524,6 +524,9 @@ function StructuredFields({
               ...(mediaKey ? [mediaKey] : []),
               ...(hasCatalogBinding ? ["catalogRef"] : []),
               ...(path === "motion" ? ["preset"] : []),
+              ...(ctx.v2 && ["CATALOG", "MENU", "TESTIMONIALS"].includes(ctx.blockType)
+                ? ["displayMode"]
+                : []),
             ].includes(key),
         )
         .map(([key, item]) => {
@@ -597,19 +600,30 @@ function StructuredFields({
               "legal",
               "hours",
             ].includes(key);
+            const attribute = /\.attributes\.\d+$/.test(path);
+            const maximum =
+              key === "body"
+                ? ["TEXT", "MEDIA_STORY"].includes(ctx.blockType)
+                  ? 2000
+                  : 500
+                : attribute && key === "value"
+                  ? 160
+                  : attribute && key === "label"
+                    ? 80
+                    : (textLimits[key] ?? 1000);
             return (
               <InspectorField key={key} label={label}>
                 {multiline ? (
                   <textarea
                     rows={4}
                     value={item}
-                    maxLength={textLimits[key] ?? 2000}
+                    maxLength={maximum}
                     onChange={(e) => change(key, e.target.value)}
                   />
                 ) : (
                   <input
                     value={item}
-                    maxLength={textLimits[key] ?? 1000}
+                    maxLength={maximum}
                     onChange={(e) => change(key, e.target.value)}
                   />
                 )}
@@ -893,7 +907,19 @@ export function BlockInspector({
             <>
               <InspectorSelect
                 label="Layout"
-                value={block.appearance?.layout ?? blockRegistry[block.type].layouts[0]}
+                value={
+                  block.appearance?.layout ??
+                  (block.type === "HEADER"
+                    ? draft.template?.id === "everyday-boutique"
+                      ? "CENTERED"
+                      : "SPLIT"
+                    : block.type === "TESTIMONIALS"
+                      ? block.content.displayMode
+                      : (block.type === "CATALOG" || block.type === "MENU") &&
+                          block.content.displayMode === "HORIZONTAL"
+                        ? "RAIL"
+                        : blockRegistry[block.type].layouts[0])
+                }
                 values={blockRegistry[block.type].layouts}
                 onChange={(layout) =>
                   onChange({

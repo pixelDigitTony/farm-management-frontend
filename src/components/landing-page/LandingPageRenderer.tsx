@@ -10,7 +10,11 @@ import type {
   TemplateId,
 } from "@/types/landing-page";
 import { LandingBackground } from "./Background";
-import { StorefrontBlock, type StorefrontContext } from "./blocks/StorefrontBlocks";
+import {
+  hasStorefrontContent,
+  StorefrontBlock,
+  type StorefrontContext,
+} from "./blocks/StorefrontBlocks";
 import { LandingPageRenderer as LegacyRenderer, sectionScrollStyle } from "./LegacyLandingRenderer";
 import { LandingMotionProvider, MotionBlock, type RenderMode } from "./motion/LandingMotion";
 import "./storefront.css";
@@ -173,8 +177,14 @@ export function LandingPageRenderer(props: LandingRendererProps) {
           .map((section) => {
             const blocks = section.components
               .filter((c) => mode === "EDIT" || c.enabled)
+              .filter((c) => mode === "EDIT" || hasStorefrontContent(c))
               .filter((c) => !hasInline || mode === "EDIT" || c.id !== props.contactBlockId);
-            if (!blocks.length) return null;
+            if (!blocks.length)
+              return (
+                <div key={section.id} id={section.id}>
+                  {section.anchor && section.anchor !== section.id && <span id={section.anchor} />}
+                </div>
+              );
             return (
               <section
                 key={section.id}

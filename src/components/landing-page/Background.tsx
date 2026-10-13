@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import pack from "@/lib/landing-page/assets.json";
 import type { BackgroundSettings } from "@/types/landing-page";
 import { useLandingMotion } from "./motion/LandingMotion";
-export function LandingBackground({ settings }: { settings?: BackgroundSettings }) {
+import { ResponsiveImage } from "./ResponsiveImage";
+export function LandingBackground({
+  settings,
+  eager = false,
+}: {
+  settings?: BackgroundSettings;
+  eager?: boolean;
+}) {
   const root = useRef<HTMLDivElement>(null),
     host = useRef<HTMLDivElement>(null);
   const { mode, off } = useLandingMotion();
@@ -101,32 +108,26 @@ export function LandingBackground({ settings }: { settings?: BackgroundSettings 
       style={{ background: settings?.color }}
     >
       {url && (
-        <picture>
-          <source
-            media="(max-width:767px)"
-            srcSet={
-              settings?.mode === "THREE_D"
-                ? scene?.mobilePoster
-                : (settings?.image?.mobileUrl ?? url)
-            }
-          />
-          <img
-            key={url}
-            src={url}
-            alt=""
-            fetchPriority="high"
-            onError={(e) => {
-              e.currentTarget.style.visibility = "hidden";
-            }}
-            style={
-              settings?.mode === "IMAGE"
-                ? {
-                    objectPosition: `${(settings.image?.focalPoint.x ?? 0.5) * 100}% ${(settings.image?.focalPoint.y ?? 0.5) * 100}%`,
-                  }
-                : undefined
-            }
-          />
-        </picture>
+        <ResponsiveImage
+          mobileSrc={
+            settings?.mode === "THREE_D" ? scene?.mobilePoster : (settings?.image?.mobileUrl ?? url)
+          }
+          key={url}
+          src={url}
+          alt=""
+          fetchPriority={eager ? "high" : "auto"}
+          loading={eager ? "eager" : "lazy"}
+          onError={(e) => {
+            e.currentTarget.style.visibility = "hidden";
+          }}
+          style={
+            settings?.mode === "IMAGE"
+              ? {
+                  objectPosition: `${(settings.image?.focalPoint.x ?? 0.5) * 100}% ${(settings.image?.focalPoint.y ?? 0.5) * 100}%`,
+                }
+              : undefined
+          }
+        />
       )}
       <div ref={host} className="lp-background-canvas" style={{ opacity: loaded ? 1 : 0 }} />
       {settings?.mode === "THREE_D" && (

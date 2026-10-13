@@ -142,6 +142,7 @@
   border-radius: 6px;
 }
 .lb-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
@@ -207,7 +208,7 @@
   opacity: 0.5;
 }
 .lb-tree-drag {
-  width: 24px;
+  width: 44px;
   min-height: 44px;
   flex-shrink: 0;
   touch-action: none;
@@ -249,7 +250,7 @@
   display: flex;
 }
 .lb-tree-actions button {
-  width: 36px;
+  width: 44px;
   height: 44px;
   display: grid;
   place-items: center;
@@ -671,9 +672,9 @@
   }
   .lb-inspector.lb-panel-open {
     display: block;
-    position: fixed;
+    position: absolute;
     right: 0;
-    top: 110px;
+    top: 0;
     bottom: 0;
     z-index: 30;
     width: 320px;
@@ -713,7 +714,7 @@
   }
   .lb-history button,
   .lb-devices button {
-    width: 40px;
+    width: 44px;
   }
 }
 @media (max-width: 1023px) {
@@ -725,9 +726,9 @@
   }
   .lb-left.lb-panel-open {
     display: block;
-    position: fixed;
+    position: absolute;
     left: 0;
-    top: 170px;
+    top: 0;
     bottom: 0;
     width: 280px;
     z-index: 30;
@@ -740,7 +741,7 @@
     justify-content: space-between;
   }
   .lb-inspector.lb-panel-open {
-    top: 170px;
+    top: 0;
   }
   .lb-save-status {
     display: none;
@@ -788,13 +789,13 @@
     max-width: 105px;
   }
   .lb-history button {
-    width: 32px;
+    width: 44px;
   }
   .lb-devices {
     order: 2;
   }
   .lb-devices button {
-    width: 36px;
+    width: 44px;
   }
   .lb-preview-toggle {
     font-size: 11px;
@@ -813,14 +814,14 @@
   }
   .lb-variant-actions button {
     padding: 6px;
-    min-height: 36px;
+    min-height: 44px;
   }
   .lb-subcommand a {
     margin-left: 8px;
   }
   .lb-left.lb-panel-open,
   .lb-inspector.lb-panel-open {
-    top: 205px;
+    top: 0;
     max-width: calc(100vw - 24px);
     width: 320px;
   }
@@ -844,17 +845,18 @@
     background: transparent;
     gap: 0;
     flex-wrap: wrap;
-    width: 72px;
+    width: 88px;
+    flex-shrink: 0;
   }
   .lb-tree-actions button {
-    width: 24px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
   .lb-tree-label {
     font-size: 10px;
   }
   .lb-tree-drag {
-    width: 20px;
+    width: 44px;
   }
   .lb-dialog-actions button {
     min-height: 44px;

@@ -23,6 +23,7 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { useDraftAutosave } from "@/hooks/useDraftAutosave";
 import { blockRegistry } from "@/lib/landing-page/registry";
 import { landingPageVariantUpdateSchema } from "@/lib/landing-page/schema";
+import { reconcileSectionLinks } from "@/lib/landing-page/section-links";
 import { canAccess } from "@/lib/permissions";
 import { getPublicSiteUrl } from "@/lib/public-site";
 import {
@@ -73,6 +74,22 @@ export function LandingPageBuilderPage() {
   const [motionOff, setMotionOff] = useState(false);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  useEffect(() => {
+    const closePanel = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || document.querySelector('[role="dialog"]')) return;
+      if (matchMedia("(max-width:1279px)").matches && (leftOpen || rightOpen)) {
+        setLeftOpen(false);
+        setRightOpen(false);
+        document
+          .querySelector<HTMLButtonElement>(
+            `[aria-controls="${rightOpen ? "landing-inspector" : "landing-sections"}"]`,
+          )
+          ?.focus();
+      }
+    };
+    window.addEventListener("keydown", closePanel);
+    return () => window.removeEventListener("keydown", closePanel);
+  }, [leftOpen, rightOpen]);
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<DialogState>();
   const [name, setName] = useState("");
@@ -152,6 +169,7 @@ export function LandingPageBuilderPage() {
         next = { ...next, commerce: { ...next.commerce, contactBlockId: undefined } };
     }
     const current = latest.current;
+    if (current) next = reconcileSectionLinks(current, next);
     if (current && JSON.stringify(current) === JSON.stringify(next)) return;
     if (current) undo.current = [...undo.current, structuredClone(current)].slice(-100);
     redo.current = [];
@@ -226,6 +244,7 @@ export function LandingPageBuilderPage() {
     setBlockId(block);
     setInspector("Selection");
     setRightOpen(true);
+    setLeftOpen(false);
   }
   function focusTree() {
     requestAnimationFrame(() =>
@@ -243,6 +262,8 @@ export function LandingPageBuilderPage() {
     const s = draft.sections[index];
     if (!s) return;
     let sections = draft.sections;
+    setSectionId(id);
+    setBlockId(undefined);
     if (action === "toggle")
       sections = sections.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x));
     if (action === "move")
@@ -302,6 +323,8 @@ export function LandingPageBuilderPage() {
     const block = section?.components[index];
     if (!section || !block) return;
     let components = section.components;
+    setSectionId(sid);
+    setBlockId(id);
     if (action === "toggle")
       components = components.map((c) => (c.id === id ? { ...c, enabled: !c.enabled } : c));
     if (action === "move")
@@ -690,6 +713,8 @@ export function LandingPageBuilderPage() {
       <div className="lb-mobile-toolbar">
         <button
           type="button"
+          aria-controls="landing-sections"
+          aria-expanded={leftOpen}
           onClick={() => {
             setLeftOpen(!leftOpen);
             setRightOpen(false);
@@ -699,6 +724,8 @@ export function LandingPageBuilderPage() {
         </button>
         <button
           type="button"
+          aria-controls="landing-inspector"
+          aria-expanded={rightOpen}
           onClick={() => {
             setRightOpen(!rightOpen);
             setLeftOpen(false);
@@ -733,6 +760,7 @@ export function LandingPageBuilderPage() {
       <div className="lb-body">
         {!preview && (
           <aside
+            id="landing-sections"
             className={`lb-left ${leftOpen ? "lb-panel-open" : ""}`}
             aria-label="Sections and templates"
           >
@@ -894,6 +922,7 @@ export function LandingPageBuilderPage() {
         </main>
         {!preview && (
           <aside
+            id="landing-inspector"
             className={`lb-inspector ${rightOpen ? "lb-panel-open" : ""}`}
             aria-label="Inspector"
           >

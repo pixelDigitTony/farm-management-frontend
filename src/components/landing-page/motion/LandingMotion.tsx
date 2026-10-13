@@ -62,13 +62,15 @@ export function MotionBlock({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const { off, small, strength } = useLandingMotion();
+  const preset = settings?.preset;
+  const mobile = settings?.mobile;
   const [ready, setReady] = useState(false);
   useEffect(() => {
     setReady(false);
-    if (off || !settings || settings.preset === "NONE") return;
+    if (off || (preset !== "REVEAL" && preset !== "IMAGE_REVEAL")) return;
     const element = root.current;
     if (!element) return;
-    if (small && settings.mobile === "STATIC") return;
+    if (small && mobile === "STATIC") return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
@@ -80,7 +82,20 @@ export function MotionBlock({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [off, small, settings]);
+  }, [off, small, preset, mobile]);
+  useEffect(() => {
+    if (!ready || off || (small && mobile === "STATIC") || preset !== "IMAGE_REVEAL") return;
+    // Clip only imagery: section wrappers must not clip sticky content, focus rings or text.
+    const animations = Array.from(root.current?.querySelectorAll("img") ?? []).map((image) =>
+      image.animate?.([{ clipPath: "inset(0 0 6% 0)" }, { clipPath: "inset(0)" }], {
+        duration: settings?.durationMs ?? 450,
+        easing: "ease-out",
+      }),
+    );
+    return () => {
+      for (const animation of animations) animation?.cancel();
+    };
+  }, [ready, off, small, mobile, preset, settings?.durationMs]);
   return (
     <m.div
       ref={root}
@@ -89,12 +104,12 @@ export function MotionBlock({
       animate={
         ready && !off && !(small && settings?.mobile === "STATIC")
           ? settings?.preset === "IMAGE_REVEAL"
-            ? { clipPath: ["inset(0 0 6% 0)", "inset(0 0 0% 0)"] }
+            ? { y: 0, opacity: 1, clipPath: "none" }
             : {
                 y: [(small ? 8 : settings?.intensity === "STANDARD" ? 12 : 8) * strength, 0],
                 opacity: [0.8, 1],
               }
-          : { y: 0, opacity: 1, clipPath: "inset(0 0 0% 0)" }
+          : { y: 0, opacity: 1, clipPath: "none" }
       }
       transition={{ duration: (settings?.durationMs ?? 450) / 1000 }}
     >

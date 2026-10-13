@@ -1,7 +1,6 @@
 import { m, useMotionValueEvent, useScroll, useTransform } from "framer-motion";
 import { useRef, useState } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
-import { StoredImage } from "@/components/StoredImage";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import pack from "@/lib/landing-page/assets.json";
@@ -23,6 +22,7 @@ import {
   LandingPageComponentView as LegacyBlock,
 } from "../LegacyLandingRenderer";
 import { DepthPlane, useLandingMotion } from "../motion/LandingMotion";
+import { ResponsiveImage } from "../ResponsiveImage";
 
 export type StorefrontContext = {
   theme: LandingPageTheme;
@@ -44,6 +44,22 @@ export type StorefrontContext = {
   highlightKey?: string;
 };
 type Block = LandingPageComponent;
+export function hasStorefrontContent(block: Block) {
+  switch (block.type) {
+    case "FEATURES":
+    case "SHOWCASE":
+    case "FAQ":
+      return block.content.items.length > 0;
+    case "MEDIA_STORY":
+      return block.content.frames.length > 0;
+    case "TESTIMONIALS":
+      return block.content.entries.some((entry) => entry.enabled);
+    case "GALLERY":
+      return Boolean(block.content.media?.length || block.content.mediaUrls.length);
+    default:
+      return true;
+  }
+}
 export function actionHref(target: ActionTarget) {
   return target.kind === "SECTION" ? `#${target.sectionId}` : target.url;
 }
@@ -84,11 +100,13 @@ export function AssetImage({
   eager = false,
   className,
   style,
+  sizes = "(max-width:767px) 100vw, (max-width:1279px) 60vw, 800px",
 }: {
   media: MediaAsset;
   eager?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  sizes?: string;
 }) {
   const entry = Object.values(pack.assets).find((a) => a.url === media.url);
   const ratio = {
@@ -99,28 +117,26 @@ export function AssetImage({
     WIDE: "16 / 9",
   }[media.aspectRatio];
   return (
-    <picture>
-      {media.mobileUrl && <source media="(max-width:767px)" srcSet={media.mobileUrl} />}
-      <StoredImage
-        className={className}
-        src={media.url}
-        alt={media.alt}
-        loading={eager ? "eager" : "lazy"}
-        fetchPriority={eager ? "high" : "auto"}
-        width={entry?.width}
-        height={entry?.height}
-        srcSet={entry?.sources.map((s) => `${s.url} ${s.width}w`).join(", ")}
-        sizes="(max-width:767px) 100vw, (max-width:1279px) 60vw, 800px"
-        style={{
-          objectPosition: `${media.focalPoint.x * 100}% ${media.focalPoint.y * 100}%`,
-          aspectRatio: ratio,
-          ...style,
-        }}
-        onError={(e) => {
-          e.currentTarget.classList.add("lp-image-failed");
-        }}
-      />
-    </picture>
+    <ResponsiveImage
+      mobileSrc={media.mobileUrl}
+      className={className}
+      src={media.url}
+      alt={media.alt}
+      loading={eager ? "eager" : "lazy"}
+      fetchPriority={eager ? "high" : "auto"}
+      width={entry?.width}
+      height={entry?.height}
+      srcSet={entry?.sources.map((s) => `${s.url} ${s.width}w`).join(", ")}
+      sizes={sizes}
+      style={{
+        objectPosition: `${media.focalPoint.x * 100}% ${media.focalPoint.y * 100}%`,
+        aspectRatio: ratio,
+        ...style,
+      }}
+      onError={(e) => {
+        e.currentTarget.classList.add("lp-image-failed");
+      }}
+    />
   );
 }
 function mediaFromUrl(url: string, alt: string): MediaAsset {
@@ -195,14 +211,16 @@ function Header({
   const c = block.content;
   return (
     <header className="lp-header">
-      <button
-        type="button"
-        className="lp-icon-button lp-menu"
-        aria-label="Open navigation"
-        onClick={() => setOpen(true)}
-      >
-        ☰
-      </button>
+      {c.navigation.length > 0 && (
+        <button
+          type="button"
+          className="lp-icon-button lp-menu"
+          aria-label="Open navigation"
+          onClick={() => setOpen(true)}
+        >
+          ☰
+        </button>
+      )}
       <a
         className="lp-brand"
         href={`#${context.sections.find((s) => s.enabled)?.id ?? block.id}`}
@@ -224,20 +242,29 @@ function Header({
             <Icon icon="solar:chat-round-linear" />
           </a>
         )}
-        {c.showSearch && context.catalogItems.length > 0 && (
-          <button
-            type="button"
-            className="lp-icon-button"
-            aria-label="Search collection"
-            onClick={() => {
-              const search = document.querySelector<HTMLInputElement>("[data-lp-search]");
-              search?.scrollIntoView({ block: "center" });
-              search?.focus();
-            }}
-          >
-            <Icon icon="solar:magnifer-linear" />
-          </button>
-        )}
+        {c.showSearch &&
+          context.sections.some(
+            (section) =>
+              section.enabled &&
+              section.components.some(
+                (item) => item.enabled && (item.type === "CATALOG" || item.type === "MENU"),
+              ),
+          ) && (
+            <button
+              type="button"
+              className="lp-icon-button"
+              aria-label="Search collection"
+              onClick={() => {
+                const search = document.querySelector<HTMLInputElement>(
+                  ".lp-storefront [data-lp-search]",
+                );
+                search?.scrollIntoView({ block: "center" });
+                search?.focus();
+              }}
+            >
+              <Icon icon="solar:magnifer-linear" />
+            </button>
+          )}
         {c.showCart && context.goal === "SHOP" && context.onOpenCart && (
           <button
             type="button"
@@ -308,12 +335,17 @@ function Hero({
           }}
         >
           {(c.stripMedia ?? []).map((media, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: Media can repeat and the schema has no per-entry ID; images are stateless.
-            <AssetImage key={i} media={media} eager={i === 0} />
+            <AssetImage
+              // biome-ignore lint/suspicious/noArrayIndexKey: Media may repeat and the schema has no entry ID.
+              key={i}
+              media={media}
+              eager={context.primaryHero && i === 0}
+              sizes="(max-width:767px) 76vw, 25vw"
+            />
           ))}
         </section>
         <div className={`lp-promo lp-promo-${block.appearance?.panelPlacement ?? "OVERLAP"}`}>
-          <LandingBackground settings={context.background} />
+          <LandingBackground settings={context.background} eager={context.primaryHero} />
           <div className="lp-hero-copy">
             <p className="lp-eyebrow">{c.eyebrow}</p>
             <Heading>{c.title}</Heading>
@@ -327,7 +359,7 @@ function Hero({
     <div
       className={`lp-hero lp-hero-${layout.toLowerCase()} ${context.background?.mode === "COLOR" ? "lp-hero-flat" : ""}`}
     >
-      <LandingBackground settings={context.background} />
+      <LandingBackground settings={context.background} eager={context.primaryHero} />
       <div className="lp-hero-copy">
         <p className="lp-eyebrow">{c.eyebrow}</p>
         <Heading>{c.title}</Heading>
@@ -339,7 +371,9 @@ function Hero({
       </div>
       {(media || layers.length > 0) && (
         <div className="lp-hero-media">
-          {media && <AssetImage media={media} eager className="lp-main-image" />}
+          {media && (
+            <AssetImage media={media} eager={context.primaryHero} className="lp-main-image" />
+          )}
           {layers.map((l, i) => (
             <DepthPlane
               key={l.id}
@@ -351,7 +385,15 @@ function Hero({
               }
               className={`lp-layer lp-layer-${l.depth.toLowerCase()} lp-layer-${i}`}
             >
-              <AssetImage media={l.media} eager />
+              <AssetImage
+                media={l.media}
+                eager={context.primaryHero}
+                sizes={
+                  l.depth === "FOREGROUND"
+                    ? "(max-width:767px) 50vw, 25vw"
+                    : "(max-width:767px) 90vw, 50vw"
+                }
+              />
             </DepthPlane>
           ))}
         </div>
@@ -374,6 +416,7 @@ function MediaStory({
   const frames = block.content.frames;
   const layout = block.appearance?.layout ?? "STORY";
   const staticMedia = off || (small && block.motion?.mobile !== "SUBTLE");
+  const stacked = off || small;
   const sticky = block.motion?.preset === "STICKY_STORY" && !off && !small && frames.length > 1;
   const { scrollYProgress: storyProgress } = useScroll({
     target: root,
@@ -390,7 +433,7 @@ function MediaStory({
   return (
     <div
       ref={root}
-      className={`lp-story lp-story-${layout.toLowerCase()} ${sticky ? "lp-story-sticky" : ""}`}
+      className={`lp-story lp-story-${layout.toLowerCase()} ${sticky ? "lp-story-sticky" : ""} ${stacked ? "lp-story-stacked" : ""}`}
     >
       <div className="lp-story-inner">
         <div className="lp-story-copy">
@@ -406,36 +449,51 @@ function MediaStory({
           {block.content.action && (
             <StorefrontAction {...block.content.action} theme={context.theme} />
           )}
-          <fieldset className="lp-frame-choices" aria-label="Story images">
-            {frames.map((f, i) => (
-              <button
-                type="button"
-                key={f.id}
-                aria-pressed={active === i}
-                onClick={() => {
-                  setActive(i);
-                  if (f.catalogRef)
-                    context.onHighlight?.(`${f.catalogRef.sourceType}:${f.catalogRef.sourceId}`);
-                }}
-              >
-                {f.caption || `View ${i + 1}`}
-              </button>
-            ))}
-          </fieldset>
+          {!stacked && (
+            <fieldset className="lp-frame-choices" aria-label="Story images">
+              {frames.map((f, i) => (
+                <button
+                  type="button"
+                  key={f.id}
+                  aria-pressed={active === i}
+                  onClick={() => {
+                    setActive(i);
+                    if (f.catalogRef)
+                      context.onHighlight?.(`${f.catalogRef.sourceType}:${f.catalogRef.sourceId}`);
+                  }}
+                >
+                  {f.caption || `View ${i + 1}`}
+                </button>
+              ))}
+            </fieldset>
+          )}
           {sticky && contact && (
             <a className="lp-skip" href={`#${contact.id}`}>
               Skip to contact ↓
             </a>
           )}
         </div>
-        <div className="lp-story-images">
-          <AssetImage media={frames[active]?.media ?? frames[0]!.media} />
-          {layout === "PORTAL" && frames[1] && active === 0 && !staticMedia && (
-            <m.div className="lp-portal-plane" style={{ clipPath: clip }}>
-              <AssetImage media={frames[1].media} />
-            </m.div>
-          )}
-        </div>
+        {stacked ? (
+          <div className="lp-story-frames">
+            {frames.map((frame) => (
+              <figure key={frame.id}>
+                <div className="lp-story-images">
+                  <AssetImage media={frame.media} />
+                </div>
+                {frame.caption && <figcaption>{frame.caption}</figcaption>}
+              </figure>
+            ))}
+          </div>
+        ) : (
+          <div className="lp-story-images">
+            <AssetImage media={frames[active]?.media ?? frames[0]!.media} />
+            {layout === "PORTAL" && frames[1] && active === 0 && !staticMedia && (
+              <m.div className="lp-portal-plane" style={{ clipPath: clip }}>
+                <AssetImage media={frames[1].media} />
+              </m.div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -475,7 +533,8 @@ function Catalog({
   const appearance = block.appearance;
   const boutique = appearance?.cardLayout === "BOUTIQUE";
   const rail =
-    appearance?.layout === "RAIL" || (!boutique && block.content.displayMode === "HORIZONTAL");
+    appearance?.layout === "RAIL" ||
+    (!appearance?.layout && !boutique && block.content.displayMode === "HORIZONTAL");
   const current = detail ? context.catalogItems.find((i) => i.key === detail.key) : undefined;
   const variant = current?.variants.find((v) => v.variantId === variantId);
   const enabled = context.goal === "SHOP" && Boolean(context.onAdd);

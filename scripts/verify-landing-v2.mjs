@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { chromium } from "@playwright/test";
+import { safeParse } from "valibot";
 import {
   createLandingPreset,
   landingTemplates,
 } from "../../farm-management-backend/dist/services/landing-presets.js";
+import { landingPageVariantUpdateSchema } from "../../farm-management-backend/dist/validation/landing-page.js";
 
 const url = process.env.LANDING_TEST_URL ?? "http://127.0.0.1:4181";
 const output = "test-results/landing-v2";
@@ -89,6 +91,11 @@ await context.route("**/*", async (route) => {
   const request = route.request();
   const path = new URL(request.url()).pathname;
   const send = (data, status = 200) => route.fulfill({ json: data, status });
+  if (path === "/api/public/images/507f1f77bcf86cd799439099")
+    return route.fulfill({
+      body: await readFile("public/landing-assets/web/bold-market/market-hero-1536.webp"),
+      contentType: "image/webp",
+    });
   if (!["fetch", "xhr"].includes(request.resourceType()))
     return request.url().startsWith(url) ? route.continue() : route.abort();
   if (request.url().startsWith(url) && !path.startsWith("/api/")) return route.continue();
@@ -157,6 +164,11 @@ await context.route("**/*", async (route) => {
       active++;
       maxActive = Math.max(maxActive, active);
       const update = request.postDataJSON();
+      const validated = safeParse(landingPageVariantUpdateSchema, update);
+      if (!validated.success) {
+        active--;
+        return send({ message: validated.issues.map((issue) => issue.message).join("; ") }, 422);
+      }
       writes.push(update);
       await new Promise((r) => setTimeout(r, 300));
       active--;
@@ -289,12 +301,71 @@ try {
   await page.getByLabel("Variant", { exact: true }).selectOption("variant0");
   await frame.getByRole("heading", { name: "Good things. Great taste.", exact: true }).waitFor();
   results.variantSwitch = true;
+  await page.getByRole("button", { name: "Header · Demo merchant", exact: true }).click();
+  await page.getByRole("tab", { name: "Style", exact: true }).click();
+  await page.getByLabel("Layout", { exact: true }).selectOption("CENTERED");
+  await frame.locator(".lp-layout-centered .lp-header").waitFor();
+  const centered = await frame.locator(".lp-header").evaluate((header) => {
+    const h = header.getBoundingClientRect(),
+      b = header.querySelector(".lp-brand").getBoundingClientRect();
+    return Math.abs(h.left + h.width / 2 - (b.left + b.width / 2));
+  });
+  assert.ok(centered < 1);
+  await page.getByLabel("Layout", { exact: true }).selectOption("SPLIT");
+  await frame.locator(".lp-layout-split .lp-header").waitFor();
+  assert.ok(
+    await frame
+      .locator(".lp-header")
+      .evaluate(
+        (header) =>
+          header.querySelector(".lp-brand").getBoundingClientRect().width <
+          header.getBoundingClientRect().width / 2,
+      ),
+  );
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.waitForTimeout(1250);
+  results.headerLayouts = true;
+  const beforeHide = JSON.parse(JSON.stringify(variants[0].sections));
+  await page.getByRole("button", { name: "Collection", exact: true }).hover();
+  await page.getByRole("button", { name: "Hide Collection", exact: true }).click();
+  await page.waitForTimeout(1250);
+  assert.equal(
+    variants[0].sections.find((section) => section.name === "Collection").enabled,
+    false,
+  );
+  assert.equal(safeParse(landingPageVariantUpdateSchema, variants[0]).success, true);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.waitForTimeout(1250);
+  assert.deepEqual(variants[0].sections, beforeHide);
+  results.linkedSectionHideUndo = true;
   for (const w of [1024, 768, 390, 320]) {
     await page.setViewportSize({ width: w, height: 900 });
     await page.waitForTimeout(150);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   }
   await page.screenshot({ path: `${output}/editor-mobile.png` });
+  await page.getByRole("button", { name: "Sections & templates", exact: true }).click();
+  for (const box of await page
+    .locator(".lb-left .lb-tree-actions button:visible")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const r = button.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      }),
+    ))
+    assert.ok(box.width >= 44 && box.height >= 44);
+  await page.getByRole("button", { name: /^Hero ·/ }).click();
+  assert.equal(await page.locator(".lb-panel-open").count(), 1);
+  assert.ok(await page.locator("#landing-inspector").isVisible());
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".lb-panel-open").count(), 0);
+  assert.ok(
+    await page
+      .getByRole("button", { name: "Inspector", exact: true })
+      .evaluate((button) => button === document.activeElement),
+  );
+  results.mobilePanelsAndTargets = true;
   results.editorResponsive = true;
   await page.setViewportSize({ width: 1440, height: 1000 });
   for (const variant of variants.slice(0, 5)) {
@@ -355,10 +426,58 @@ try {
   const productRail = page.getByRole("region", { name: "products", exact: true });
   await productRail.focus();
   await page.keyboard.press("ArrowRight");
-  assert.ok(await productRail.evaluate((element) => element.scrollLeft > 0), "The product rail must scroll with the keyboard");
+  assert.ok(
+    await productRail.evaluate((element) => element.scrollLeft > 0),
+    "The product rail must scroll with the keyboard",
+  );
   await page.getByRole("button", { name: "Previous products", exact: true }).click();
   assert.equal(await productRail.evaluate((element) => element.scrollLeft), 0);
   results.keyboardRail = true;
+  published = structuredClone(variants[0]);
+  published.theme.background = {
+    ...published.theme.background,
+    mode: "IMAGE",
+    image: {
+      url: "/api/images/507f1f77bcf86cd799439099",
+      alt: "Stored backdrop",
+      focalPoint: { x: 0.5, y: 0.5 },
+      aspectRatio: "WIDE",
+    },
+  };
+  const hero = published.sections
+    .flatMap((section) => section.components)
+    .find((block) => block.type === "HERO");
+  hero.content.media = {
+    ...(hero.content.media ?? hero.content.layers[0].media),
+    mobileUrl: "/api/images/507f1f77bcf86cd799439099",
+  };
+  hero.content.layers = [];
+  await page.goto(`${url}/site/demo-store`);
+  await page.waitForFunction(() => {
+    const images = [
+      document.querySelector(".lp-background img"),
+      document.querySelector(".lp-main-image"),
+    ];
+    return images.every((img) => img?.src.startsWith("blob:") && img.naturalWidth > 0);
+  });
+  const frames = published.sections
+    .flatMap((section) => section.components)
+    .filter((block) => block.type === "MEDIA_STORY")
+    .reduce((total, block) => total + block.content.frames.length, 0);
+  assert.equal(await page.locator(".lp-story-frames figure").count(), frames);
+  assert.equal(await page.locator(".lp-story-sticky").count(), 0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  assert.equal(await page.locator(".lp-story-frames figure").count(), frames);
+  for (const section of published.sections.filter((section) =>
+    section.components.every((block) => block.type === "FAQ" && !block.content.items.length),
+  ))
+    assert.equal(
+      await page
+        .locator(`[id="${section.id}"]`)
+        .evaluate((element) => element.getBoundingClientRect().height),
+      0,
+    );
+  results.storedMediaAndStackedFallback = true;
   await page.emulateMedia({ reducedMotion: "no-preference" });
   published = structuredClone(variants[3]);
   await page.setViewportSize({ width: 1440, height: 1000 });
