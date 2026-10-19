@@ -2,7 +2,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import * as v from "valibot";
 import { api, sessionUserStore } from "@/api/client";
@@ -13,8 +13,10 @@ import {
   InspectorField,
   InspectorSelect,
 } from "@/components/landing-page/editor/Inspector";
+import { LandingWorkspaceControls } from "@/components/landing-page/editor/LandingWorkspaceControls";
 import { PreviewFrame } from "@/components/landing-page/editor/PreviewFrame";
 import { SectionTree } from "@/components/landing-page/editor/SectionTree";
+import { SubdomainField } from "@/components/landing-page/editor/SubdomainField";
 import { LandingIcon as Icon } from "@/components/landing-page/LandingIcon";
 import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,7 @@ import {
   type LandingPageBuilderData,
   type LandingPageComponent,
   type LandingPageComponentType,
+  type LandingPageRecord,
   type LandingPageSection,
   type LandingPageVariant,
   type LandingPageVariantPayload,
@@ -51,6 +54,7 @@ type DialogState = {
 };
 function documentBody(d: LandingPageVariant) {
   return {
+    categoryBindingVersion: d.categoryBindingVersion,
     name: d.name,
     schemaVersion: d.schemaVersion,
     template: d.template,
@@ -62,6 +66,13 @@ function documentBody(d: LandingPageVariant) {
 }
 export function LandingPageBuilderPage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageId = searchParams.get("page") ?? "";
+  const builderKey = ["landing-page-builder", pageId || "legacy"];
+  const revisions = useRef(new Map<string, number>());
+  const publishKey = useRef(crypto.randomUUID());
+  const [settingsSlug, setSettingsSlug] = useState("");
+  const [settingsAddressReady, setSettingsAddressReady] = useState(false);
   const [draft, setDraft] = useState<LandingPageVariant>();
   const latest = useRef(draft);
   latest.current = draft;
@@ -102,13 +113,19 @@ export function LandingPageBuilderPage() {
   const canEdit = canAccess(sessionUserStore.get(), "landing-page", "edit");
   const canCreate = canAccess(sessionUserStore.get(), "landing-page", "create");
   const canDelete = canAccess(sessionUserStore.get(), "landing-page", "delete");
+  const pageList = useQuery({
+    queryKey: ["landing-pages"],
+    queryFn: () => api<{ items: LandingPageRecord[] }>("/landing-page/pages"),
+  });
   const builder = useQuery({
-    queryKey: ["landing-page-builder"],
+    queryKey: builderKey,
+    enabled: Boolean(pageId),
     queryFn: async () => {
-      const data = await api<Payload>("/landing-page");
+      const data = await api<Payload>(pageId ? `/landing-page/pages/${pageId}` : "/landing-page");
       return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
     },
   });
+  const pagePath = `/landing-page/pages/${builder.data?.page?._id ?? pageId}`;
   const templates = useQuery({
     queryKey: ["landing-page-templates"],
     queryFn: () =>
@@ -121,18 +138,33 @@ export function LandingPageBuilderPage() {
         parsed.issues[0]?.message ?? "Complete the required fields before this draft can save",
       );
     const saved = normalizeLandingPageVariant(
-      await api<LandingPageVariantPayload>(`/landing-page/variants/${doc._id}`, {
-        method: "PATCH",
-        body: JSON.stringify(parsed.output),
-      }),
+      await api<LandingPageVariantPayload>(
+        `/landing-page/pages/${doc.landingPageId ?? builder.data?.page?._id}/variants/${doc._id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...parsed.output,
+            expectedRevision: revisions.current.get(doc._id) ?? doc.revision ?? 1,
+          }),
+        },
+      ),
     );
-    queryClient.setQueryData<LandingPageBuilderData>(["landing-page-builder"], (current) =>
+    revisions.current.set(saved._id, saved.revision ?? 1);
+    if (latest.current?._id === saved._id) {
+      latest.current = { ...latest.current, revision: saved.revision };
+      setDraft((current) =>
+        current?._id === saved._id ? { ...current, revision: saved.revision } : current,
+      );
+    }
+    queryClient.setQueryData<LandingPageBuilderData>(builderKey, (current) =>
       current
         ? { ...current, variants: current.variants.map((x) => (x._id === saved._id ? saved : x)) }
         : current,
     );
   });
   const selectDraft = useCallback((doc: LandingPageVariant) => {
+    revisions.current.set(doc._id, doc.revision ?? 1);
+    latest.current = structuredClone(doc);
     setDraft(structuredClone(doc));
     setSectionId(doc.sections[0]?.id);
     setBlockId(undefined);
@@ -141,10 +173,21 @@ export function LandingPageBuilderPage() {
   }, []);
   useEffect(() => {
     if (draft || !builder.data?.variants.length) return;
-    selectDraft(builder.data.variants[0]!);
+    const { page, variants } = builder.data;
+    const publishedVariant = page?.isPublished
+      ? variants.find((variant) => variant._id === page.publishedVariantId)
+      : undefined;
+    const initialVariant = publishedVariant ?? variants[0];
+    if (initialVariant) selectDraft(initialVariant);
   }, [builder.data, draft, selectDraft]);
   function commit(next: LandingPageVariant) {
     if (locked.current || !canEdit) return;
+    if (
+      next.sections.some((s) =>
+        s.components.some((c) => "categoryBinding" in c.content && c.content.categoryBinding),
+      )
+    )
+      next = { ...next, categoryBindingVersion: 1 };
     if (next.schemaVersion === 2) {
       const visible = next.sections
         .filter((s) => s.enabled)
@@ -224,6 +267,24 @@ export function LandingPageBuilderPage() {
   }
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ["landing-page-builder"] });
+    await queryClient.invalidateQueries({ queryKey: ["landing-pages"] });
+  }
+  function switchPage(id: string) {
+    latest.current = undefined;
+    setDraft(undefined);
+    setDialog(undefined);
+    undo.current = [];
+    redo.current = [];
+    setSearchParams(id ? { page: id } : {});
+  }
+  function linkedTemplate(id: string, revision: number) {
+    if (!latest.current) return;
+    latest.current = {
+      ...latest.current,
+      sourceSavedTemplateId: id,
+      sourceSavedTemplateRevision: revision,
+    };
+    setDraft({ ...latest.current });
   }
   function updateBlock(next: LandingPageComponent) {
     if (!draft) return;
@@ -426,6 +487,10 @@ export function LandingPageBuilderPage() {
     setRightOpen(true);
   }
   function openDialog(kind: DialogState["kind"], template?: LandingTemplate) {
+    if (kind === "settings") {
+      setSettingsSlug(builder.data?.page?.slug ?? "");
+      setSettingsAddressReady(false);
+    }
     template ??=
       kind === "new"
         ? (templates.data?.templates.find((t) => t.id === draft?.template?.id) ??
@@ -450,37 +515,46 @@ export function LandingPageBuilderPage() {
       async () => {
         if (action.kind === "settings") {
           const data = new FormData(event.target as HTMLFormElement);
-          await api("/landing-page/settings", {
+          await api(`${pagePath}/settings`, {
             method: "PATCH",
-            body: JSON.stringify(Object.fromEntries(data)),
+            body: JSON.stringify({
+              ...Object.fromEntries(data),
+              expectedPageRevision: builder.data?.page?.revision ?? 1,
+            }),
           });
         } else if (action.kind === "rename") {
           if (!draft) return;
-          const next = { ...draft, name: name.trim() };
+          const next = { ...(latest.current ?? draft), name: name.trim() };
           const saved = normalizeLandingPageVariant(
-            await api<LandingPageVariantPayload>(`/landing-page/variants/${draft._id}`, {
+            await api<LandingPageVariantPayload>(`${pagePath}/variants/${draft._id}`, {
               method: "PATCH",
-              body: JSON.stringify(documentBody(next)),
+              body: JSON.stringify({
+                ...documentBody(next),
+                expectedRevision: revisions.current.get(draft._id) ?? draft.revision ?? 1,
+              }),
             }),
           );
           selectDraft(saved);
         } else if (action.kind === "reset") {
           if (!draft) return;
           const saved = normalizeLandingPageVariant(
-            await api<LandingPageVariantPayload>(`/landing-page/variants/${draft._id}/reset`, {
+            await api<LandingPageVariantPayload>(`${pagePath}/variants/${draft._id}/reset`, {
               method: "PATCH",
+              body: JSON.stringify({
+                expectedRevision: revisions.current.get(draft._id) ?? draft.revision ?? 1,
+              }),
             }),
           );
           selectDraft(saved);
           toast.success("Variant reset");
         } else if (action.kind === "delete") {
           if (!draft) return;
-          await api(`/landing-page/variants/${draft._id}`, { method: "DELETE" });
+          await api(`${pagePath}/variants/${draft._id}`, { method: "DELETE" });
           const next = builder.data?.variants.find((d) => d._id !== draft._id);
           if (next) selectDraft(next);
         } else {
           const created = normalizeLandingPageVariant(
-            await api<LandingPageVariantPayload>("/landing-page/variants", {
+            await api<LandingPageVariantPayload>(`${pagePath}/variants`, {
               method: "POST",
               body: JSON.stringify({
                 name: name.trim(),
@@ -505,6 +579,74 @@ export function LandingPageBuilderPage() {
       action.kind === "reset" || action.kind === "delete",
     );
   }
+  if (!pageId)
+    return (
+      <div className="space-y-6 p-4 sm:p-8">
+        <div>
+          <Link to="/" className="text-sm">
+            ← Back to workspace
+          </Link>
+          <h1 className="mt-4 font-display text-3xl font-semibold">Landing pages</h1>
+          <p className="mt-2 text-sm text-stone-500">
+            Manage independent storefronts and publish each page at its own address.
+          </p>
+        </div>
+        <LandingWorkspaceControls
+          busy={busy}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          run={mutate}
+          onSwitchPage={switchPage}
+          latestDraft={() => latest.current}
+          onSelectDraft={selectDraft}
+          onTemplateLinked={linkedTemplate}
+          refresh={refresh}
+        />
+        {pageList.isLoading ? (
+          <PageSkeleton cards={3} />
+        ) : pageList.error ? (
+          <QueryError message={pageList.error.message} retry={() => pageList.refetch()} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {pageList.data?.items.map((item) => (
+              <article
+                key={item._id}
+                className="space-y-3 rounded-2xl border border-pink-100 bg-white p-5"
+              >
+                <h2 className="font-display text-xl font-semibold">
+                  {item.name ?? item.siteTitle}
+                </h2>
+                <p className="text-sm font-medium">
+                  {item.isPublished ? "Published" : "Unpublished"}
+                </p>
+                <p className="break-all text-sm text-stone-500">{getPublicSiteUrl(item.slug)}</p>
+                {item.publishedAt && (
+                  <p className="text-xs text-stone-500">
+                    Last published {new Date(item.publishedAt).toLocaleString()}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => switchPage(item._id)}>Open editor</Button>
+                  {item.isPublished && (
+                    <Button asChild variant="outline">
+                      <a href={getPublicSiteUrl(item.slug)} target="_blank" rel="noreferrer">
+                        View live
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {!pageList.isLoading && pageList.data?.items.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-pink-200 p-8 text-center">
+            Create your first landing page to choose a template and start building.
+          </p>
+        )}
+      </div>
+    );
   if (builder.isLoading) return <PageSkeleton cards={5} />;
   if (builder.isError)
     return <QueryError message={builder.error.message} retry={() => builder.refetch()} />;
@@ -515,17 +657,18 @@ export function LandingPageBuilderPage() {
         <Icon icon="solar:palette-round-linear" />
         <h1>Your next storefront starts here.</h1>
         <p>Create a workspace, choose a template and make it your own.</p>
-        <Button
-          disabled={busy || !canCreate}
-          onClick={() =>
-            void mutate(async () => {
-              await api("/landing-page", { method: "POST" });
-              await refresh();
-            })
-          }
-        >
-          Start building
-        </Button>
+        <LandingWorkspaceControls
+          busy={busy}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          run={mutate}
+          onSwitchPage={switchPage}
+          latestDraft={() => latest.current}
+          onSelectDraft={selectDraft}
+          onTemplateLinked={linkedTemplate}
+          refresh={refresh}
+        />
       </div>
     );
   if (!draft) return <PageSkeleton />;
@@ -537,6 +680,8 @@ export function LandingPageBuilderPage() {
     page.isPublished &&
     (page.publishedVariantId !== draft._id ||
       autosave.status !== "saved" ||
+      (page.publishedSourceVariantRevision !== undefined &&
+        page.publishedSourceVariantRevision !== (draft.revision ?? 1)) ||
       Date.parse(builder.data.variants.find((d) => d._id === draft._id)?.updatedAt ?? "") >
         Date.parse(page.publishedAt ?? ""));
   const filteredTemplates = (templates.data?.templates ?? []).filter((t) =>
@@ -544,12 +689,32 @@ export function LandingPageBuilderPage() {
   );
   return (
     <div className={`lb-workspace ${preview ? "lb-preview-mode" : ""}`}>
+      <LandingWorkspaceControls
+        page={page}
+        draft={draft}
+        busy={busy}
+        canCreate={canCreate}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        run={mutate}
+        onSwitchPage={switchPage}
+        latestDraft={() => latest.current}
+        onSelectDraft={selectDraft}
+        onTemplateLinked={linkedTemplate}
+        refresh={refresh}
+      />
       <header className="lb-command">
-        <Link to="/" className="lb-back" aria-label="Back to workspace">
+        <button
+          type="button"
+          className="lb-back"
+          aria-label="Back to landing pages"
+          title="Back to landing pages"
+          disabled={busy}
+          onClick={() => void mutate(async () => switchPage(""))}
+        >
           ←
-        </Link>
+        </button>
         <div className="lb-command-identity">
-          <span>Storefront studio</span>
           <select
             aria-label="Variant"
             value={draft._id}
@@ -558,7 +723,7 @@ export function LandingPageBuilderPage() {
               const id = e.currentTarget.value;
               void mutate(async () => {
                 const next = queryClient
-                  .getQueryData<LandingPageBuilderData>(["landing-page-builder"])
+                  .getQueryData<LandingPageBuilderData>(builderKey)
                   ?.variants.find((d) => d._id === id);
                 if (next) selectDraft(next);
               });
@@ -585,79 +750,94 @@ export function LandingPageBuilderPage() {
             </button>
           )}
         </p>
-        <div className="lb-history">
-          <button
-            type="button"
-            aria-label="Undo"
-            disabled={busy || !canEdit || !undo.current.length}
-            onClick={() => history("undo")}
-          >
-            ↶
-          </button>
-          <button
-            type="button"
-            aria-label="Redo"
-            disabled={busy || !canEdit || !redo.current.length}
-            onClick={() => history("redo")}
-          >
-            ↷
-          </button>
-        </div>
-        <fieldset className="lb-devices" aria-label="Preview device">
-          {[
-            [1440, "Desktop", "solar:monitor-linear"],
-            [768, "Tablet", "solar:tablet-linear"],
-            [390, "Mobile", "solar:smartphone-linear"],
-          ].map(([w, label, icon]) => (
+        <div className="lb-command-actions">
+          <fieldset className="lb-history" aria-label="Edit history">
             <button
               type="button"
-              key={w}
-              aria-label={String(label)}
-              aria-pressed={width === w}
-              onClick={() => setWidth(Number(w))}
+              aria-label="Undo"
+              disabled={busy || !canEdit || !undo.current.length}
+              onClick={() => history("undo")}
             >
-              <Icon icon={String(icon)} />
+              ↶
             </button>
-          ))}
-        </fieldset>
-        <button
-          type="button"
-          className="lb-preview-toggle"
-          aria-pressed={preview}
-          onClick={() => {
-            setPreview(!preview);
-            setLeftOpen(false);
-            setRightOpen(false);
-          }}
-        >
-          {preview ? "Back to editing" : "Preview"}
-        </button>
-        <Button
-          className="lb-publish"
-          permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
-          disabled={busy}
-          onClick={() =>
-            void mutate(async () => {
-              await api(`/landing-page/variants/${draft._id}/publish`, { method: "POST" });
-              await refresh();
-              toast.success("Landing page published");
-            })
-          }
-        >
-          {busy ? "Working…" : "Publish"}
-        </Button>
+            <button
+              type="button"
+              aria-label="Redo"
+              disabled={busy || !canEdit || !redo.current.length}
+              onClick={() => history("redo")}
+            >
+              ↷
+            </button>
+          </fieldset>
+          <fieldset className="lb-devices" aria-label="Preview device">
+            {[
+              [1440, "Desktop", "solar:monitor-linear"],
+              [768, "Tablet", "solar:tablet-linear"],
+              [390, "Mobile", "solar:smartphone-linear"],
+            ].map(([w, label, icon]) => (
+              <button
+                type="button"
+                key={w}
+                aria-label={String(label)}
+                aria-pressed={width === w}
+                onClick={() => setWidth(Number(w))}
+              >
+                <Icon icon={String(icon)} />
+              </button>
+            ))}
+          </fieldset>
+          <button
+            type="button"
+            className="lb-preview-toggle"
+            aria-pressed={preview}
+            onClick={() => {
+              setPreview(!preview);
+              setLeftOpen(false);
+              setRightOpen(false);
+            }}
+          >
+            {preview ? "Back to editing" : "Preview"}
+          </button>
+          <Button
+            className="lb-publish"
+            permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
+            disabled={busy}
+            onClick={() =>
+              void mutate(async () => {
+                const current = latest.current ?? draft;
+                await api(`${pagePath}/publish`, {
+                  method: "POST",
+                  headers: { "Idempotency-Key": publishKey.current },
+                  body: JSON.stringify({
+                    variantId: current._id,
+                    expectedVariantRevision:
+                      revisions.current.get(current._id) ?? current.revision ?? 1,
+                    expectedPageRevision: page.revision ?? 1,
+                  }),
+                });
+                publishKey.current = crypto.randomUUID();
+                await refresh();
+                toast.success("Landing page published");
+              })
+            }
+          >
+            {busy ? "Working…" : "Publish"}
+          </Button>
+        </div>
       </header>
       <div className="lb-subcommand">
-        <div>
-          <strong>{page.isPublished ? "Live" : "Unpublished"}</strong>
-          {publishedChanges && <span> · Draft differs from live</span>}
+        <div className="lb-publication-status">
+          <strong className="lb-status-badge" data-published={page.isPublished}>
+            {page.isPublished ? "Live" : "Unpublished"}
+          </strong>
+          {publishedChanges && <span>Draft differs from live</span>}
           {page.isPublished && (
             <a href={getPublicSiteUrl(page.slug)} target="_blank" rel="noreferrer">
               View live ↗
             </a>
           )}
         </div>
-        <div className="lb-variant-actions">
+        <fieldset className="lb-variant-actions" aria-label="Variant actions">
           <button type="button" disabled={!canCreate || busy} onClick={() => openDialog("new")}>
             New
           </button>
@@ -676,6 +856,7 @@ export function LandingPageBuilderPage() {
           </button>
           <button
             type="button"
+            className="lb-danger-outline"
             disabled={
               !canDelete ||
               busy ||
@@ -695,7 +876,10 @@ export function LandingPageBuilderPage() {
               disabled={!canEdit || busy}
               onClick={() =>
                 void mutate(async () => {
-                  await api("/landing-page/unpublish", { method: "POST" });
+                  await api(`${pagePath}/unpublish`, {
+                    method: "POST",
+                    body: JSON.stringify({ expectedPageRevision: page.revision ?? 1 }),
+                  });
                   await refresh();
                 })
               }
@@ -703,7 +887,7 @@ export function LandingPageBuilderPage() {
               Unpublish
             </button>
           )}
-        </div>
+        </fieldset>
       </div>
       {(autosave.error || mutationError) && (
         <div role="alert" className="lb-error">
@@ -1410,19 +1594,29 @@ export function LandingPageBuilderPage() {
             )}
             {dialog?.kind === "settings" ? (
               <>
-                <InspectorField label="Site title">
-                  <input name="siteTitle" defaultValue={page.siteTitle} maxLength={120} required />
-                </InspectorField>
-                <InspectorField label="Public page address">
+                <InspectorField label="Page name">
                   <input
-                    name="slug"
-                    defaultValue={page.slug}
-                    pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                    minLength={3}
-                    maxLength={60}
+                    name="name"
+                    defaultValue={page.name ?? page.siteTitle}
+                    maxLength={120}
                     required
                   />
                 </InspectorField>
+                <InspectorField label="Site title">
+                  <input name="siteTitle" defaultValue={page.siteTitle} maxLength={120} required />
+                </InspectorField>
+                <SubdomainField
+                  value={settingsSlug}
+                  onChange={setSettingsSlug}
+                  pageId={page._id}
+                  onReady={setSettingsAddressReady}
+                />
+                {settingsSlug !== page.slug && (
+                  <label className="lb-checkbox">
+                    <input type="checkbox" required />I understand that old links will stop working
+                    after this address change.
+                  </label>
+                )}
                 <InspectorField label="Search description">
                   <textarea
                     name="seoDescription"
@@ -1454,7 +1648,7 @@ export function LandingPageBuilderPage() {
                 Cancel
               </Button>
               <Button
-                disabled={busy}
+                disabled={busy || (dialog?.kind === "settings" && !settingsAddressReady)}
                 variant={
                   dialog?.kind === "reset" || dialog?.kind === "delete" ? "destructive" : "default"
                 }

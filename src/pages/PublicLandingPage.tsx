@@ -29,6 +29,9 @@ import type {
 import { defaultLandingPageCommerceSettings, normalizeLandingSections } from "@/types/landing-page";
 
 type PublicLandingPage = {
+  pageId?: string;
+  businessId?: string;
+  nextTransitionAt?: string | null;
   serverTime?: string;
   slug: string;
   siteTitle: string;
@@ -101,8 +104,28 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     queryFn: ({ signal }) =>
       api<PublicLandingPage>(`/public/landing-pages/${encodeURIComponent(slug)}`, { signal }),
     retry: false,
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
     refetchInterval: 30_000,
   });
+  const storageKey =
+    page.data?.pageId && page.data.businessId
+      ? `miss-v-cart:${page.data.businessId}:${page.data.pageId}`
+      : cartKey(slug);
+  const cartPage = useRef(page.data);
+  cartPage.current = page.data;
+  const hasPageData = Boolean(page.data);
+  useEffect(() => {
+    if (!page.data?.nextTransitionAt) return;
+    const delay =
+      Date.parse(page.data.nextTransitionAt) -
+      Date.parse(page.data.serverTime ?? new Date().toISOString());
+    const timer = setTimeout(
+      () => void page.refetch(),
+      Math.min(2147483647, Math.max(50, delay + 100)),
+    );
+    return () => clearTimeout(timer);
+  }, [page.data?.nextTransitionAt, page.data?.serverTime, page.refetch]);
   const now = useCatalogPricingClock(
     (page.data?.catalogItems ?? []).map((item) => item.discount),
     page.data?.serverTime,
@@ -159,8 +182,11 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     description.content = page.data.seoDescription;
   }, [page.data]);
   useEffect(() => {
+    if (!hasPageData || !cartPage.current) return;
     try {
-      const stored = localStorage.getItem(cartKey(slug));
+      const current = localStorage.getItem(storageKey);
+      const legacy = current ? null : localStorage.getItem(cartKey(slug));
+      const stored = current ?? legacy;
       const parsed: unknown = stored ? JSON.parse(stored) : [];
       setCart(
         Array.isArray(parsed)
@@ -173,7 +199,12 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   Number.isInteger(line.quantity) &&
                   line.quantity > 0 &&
                   line.quantity <= 99 &&
-                  Number.isFinite(line.unitPrice),
+                  Number.isFinite(line.unitPrice) &&
+                  (!legacy ||
+                    cartPage.current?.catalogItems.some(
+                      (item) =>
+                        item.sourceType === line.sourceType && item.sourceId === line.sourceId,
+                    )),
               ),
             )
           : [],
@@ -181,16 +212,16 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     } catch {
       setCart([]);
     }
-    setCartReadySlug(slug);
-  }, [slug]);
+    setCartReadySlug(storageKey);
+  }, [storageKey, hasPageData, slug]);
   useEffect(() => {
-    if (cartReadySlug !== slug) return;
+    if (cartReadySlug !== storageKey) return;
     try {
-      localStorage.setItem(cartKey(slug), JSON.stringify(cart));
+      localStorage.setItem(storageKey, JSON.stringify(cart));
     } catch {
       /* Keep the current cart usable when storage is unavailable. */
     }
-  }, [cart, cartReadySlug, slug]);
+  }, [cart, cartReadySlug, storageKey]);
   const cartCount = cart.reduce((total, line) => total + line.quantity, 0);
   const cartTotal = useMemo(
     () =>
@@ -213,7 +244,10 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       setIdempotencyKey(crypto.randomUUID().replaceAll("-", "_"));
     },
     onError: async (error) => {
-      if (error instanceof ApiError && error.code === "PRICES_CHANGED") {
+      if (
+        error instanceof ApiError &&
+        ["PRICES_CHANGED", "PRODUCT_NOT_ACTIVE_NOW"].includes(error.code ?? "")
+      ) {
         setReviewedPrices("");
         setPriceNotice(error.message);
         await page.refetch();

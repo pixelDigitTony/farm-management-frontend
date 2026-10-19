@@ -10,6 +10,7 @@ import type {
   LandingPageVariant,
   MediaAsset,
 } from "@/types/landing-page";
+import { CategoryBindingEditor } from "./CategoryBindingEditor";
 
 const fieldName = (key: string) =>
   key
@@ -631,53 +632,7 @@ function StructuredFields({
             );
           }
           if (Array.isArray(item)) {
-            if (key === "catalogItemRefs" || key === "menuItemIds")
-              return (
-                <fieldset key={key} className="lb-inspector-group">
-                  <legend>Catalog binding</legend>
-                  <p className="lb-help">
-                    Choose business-owned items. An empty selection shows the available collection.
-                  </p>
-                  {ctx.catalog
-                    .filter((c) => key !== "menuItemIds" || c.sourceType === "MENU_ITEM")
-                    .map((c) => {
-                      const checked =
-                        key === "menuItemIds"
-                          ? item.includes(c.sourceId)
-                          : item.some(
-                              (r) => r.sourceType === c.sourceType && r.sourceId === c.sourceId,
-                            );
-                      return (
-                        <label key={c.key} className="lb-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              const entry =
-                                key === "menuItemIds"
-                                  ? c.sourceId
-                                  : { sourceType: c.sourceType, sourceId: c.sourceId };
-                              change(
-                                key,
-                                checked
-                                  ? item.filter((r) =>
-                                      key === "menuItemIds"
-                                        ? r !== c.sourceId
-                                        : !(
-                                            r.sourceType === c.sourceType &&
-                                            r.sourceId === c.sourceId
-                                          ),
-                                    )
-                                  : [...item, entry].slice(0, key === "menuItemIds" ? 12 : 24),
-                              );
-                            }}
-                          />
-                          {c.name}
-                        </label>
-                      );
-                    })}
-                </fieldset>
-              );
+            if (key === "catalogItemRefs" || key === "menuItemIds") return null;
             const mediaArray = ["stripMedia", "media", "frames", "layers"].includes(key);
             const maximum =
               key === "stripMedia" || key === "frames"
@@ -863,8 +818,17 @@ export function BlockInspector({
     v2: draft.schemaVersion === 2,
   };
   const changeContent = (content: Record<string, unknown>) =>
-    onChange({ ...block, content } as LandingPageComponent);
+    onChange({
+      ...block,
+      content: {
+        ...content,
+        ...("categoryBinding" in block.content
+          ? { categoryBinding: block.content.categoryBinding }
+          : {}),
+      },
+    } as LandingPageComponent);
   const content = { ...block.content } as Record<string, unknown>;
+  delete content.categoryBinding;
   if (draft.schemaVersion === 2 && block.type === "HERO") {
     content.stripMedia ??= [];
     content.layers ??= [];
@@ -892,6 +856,14 @@ export function BlockInspector({
       </div>
       {tab === "Content" && (
         <>
+          {(block.type === "CATALOG" || block.type === "MENU") && (
+            <CategoryBindingEditor
+              key={block.id}
+              block={block}
+              variantId={draft._id}
+              onChange={onChange}
+            />
+          )}
           <StructuredFields value={content} ctx={ctx} onChange={changeContent} />
         </>
       )}

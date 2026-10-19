@@ -12,7 +12,8 @@ const buttonVariants = cva(
       variant: {
         default: "bg-pink-700 text-white shadow-sm hover:bg-pink-800",
         secondary: "bg-pink-100 text-pink-950 hover:bg-pink-200",
-        outline: "border border-pink-200 bg-white text-stone-700 hover:bg-pink-50",
+        outline:
+          "border border-[#8b95a5] bg-white text-stone-800 hover:border-pink-600 hover:bg-pink-50",
         ghost: "text-stone-600 hover:bg-pink-100/70",
         destructive: "bg-red-600 text-white hover:bg-red-700",
       },

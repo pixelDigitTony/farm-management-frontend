@@ -219,6 +219,7 @@ function MenuSection({
       name: item.name,
       description: "",
       category: item.category || "Food",
+      categoryId: item.categoryId,
       productType: "FOOD",
       mediaUrls: getMenuMediaUrls(item),
       price: item.sellingPricePerServing ?? "0",
@@ -259,6 +260,13 @@ function CatalogSection({
   const searchLabel = component.type === "MENU" ? "Search menu items" : "Search products";
   const groups = new Map<string, { name: string; items: LandingCatalogItem[] }>();
   for (const item of catalogItems) {
+    const binding = component.content.categoryBinding;
+    if (
+      item.effectiveActive === false ||
+      (binding?.mode === "SELECTED_CATEGORIES" &&
+        !binding.categoryIds.includes(item.categoryId ?? ""))
+    )
+      continue;
     const name = item.category?.trim() || item.productType.replaceAll("_", " ");
     const key = name.toLocaleLowerCase();
     const group = groups.get(key) ?? { name, items: [] };

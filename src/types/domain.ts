@@ -134,6 +134,12 @@ export type CatalogProductVariant = {
 };
 
 export type CatalogProduct = {
+  categoryId?: string;
+  revision?: number;
+  availabilitySchedule?: import("@/lib/product-availability").AvailabilitySchedule;
+  availabilityStatus?: string;
+  scheduleSummary?: string;
+  nextActiveAt?: string | null;
   originalPrice?: Money;
   discountedPrice?: Money;
   price?: Money;

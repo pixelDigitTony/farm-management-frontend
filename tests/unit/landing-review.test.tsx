@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { safeParse } from "valibot";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -111,7 +112,15 @@ describe("Landing specification review regressions", () => {
     "matches the server body limit in the %s inspector",
     (type) => {
       const block = createLandingComponent(type);
-      render(<BlockInspector block={block} draft={draft()} catalog={[]} onChange={() => {}} />);
+      const client = new QueryClient({
+        defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+      });
+      client.setQueryData(["landing-categories"], { items: [] });
+      render(
+        <QueryClientProvider client={client}>
+          <BlockInspector block={block} draft={draft()} catalog={[]} onChange={() => {}} />
+        </QueryClientProvider>,
+      );
       expect(screen.getByLabelText("Body")).toHaveAttribute(
         "maxlength",
         ["TEXT", "MEDIA_STORY"].includes(type) ? "2000" : "500",

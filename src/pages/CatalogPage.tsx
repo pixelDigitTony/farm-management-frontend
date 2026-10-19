@@ -1,12 +1,14 @@
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/api/client";
+import * as v from "valibot";
+import { ApiError, api } from "@/api/client";
 import { CatalogDiscountManager } from "@/components/CatalogDiscountManager";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
 import { ImageUpload } from "@/components/ImageUpload";
 import { Header } from "@/components/PageHeader";
+import { ProductAvailabilityEditor } from "@/components/ProductAvailabilityEditor";
 import { QueryError } from "@/components/QueryError";
 import { StoredImage } from "@/components/StoredImage";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +18,13 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useCatalogClock } from "@/lib/catalog-discounts";
+import {
+  type AvailabilitySchedule,
+  alwaysAvailable,
+  availabilityInfo,
+  availabilityScheduleSchema,
+  scheduleSummary,
+} from "@/lib/product-availability";
 import type { CatalogProduct } from "@/types/domain";
 
 type VariantDraft = {
@@ -30,6 +39,7 @@ type VariantDraft = {
 };
 
 type ProductDraft = {
+  availabilitySchedule: AvailabilitySchedule;
   name: string;
   description: string;
   category: string;
@@ -42,8 +52,10 @@ type ProductDraft = {
   isOrderable: boolean;
   isActive: boolean;
 };
+type CatalogProductsData = { items: CatalogProduct[]; serverTime: string; timezone?: string };
 
-const emptyDraft = (): ProductDraft => ({
+const emptyDraft = (timezone = "Asia/Manila"): ProductDraft => ({
+  availabilitySchedule: alwaysAvailable(timezone),
   name: "",
   description: "",
   category: "",
@@ -59,6 +71,7 @@ const emptyDraft = (): ProductDraft => ({
 
 function draftFromProduct(product: CatalogProduct): ProductDraft {
   return {
+    availabilitySchedule: product.availabilitySchedule ?? alwaysAvailable(),
     name: product.name,
     description: product.description ?? "",
     category: product.category ?? "",
@@ -87,18 +100,29 @@ const textAreaClass =
 
 const alphabetical = (left: string, right: string) =>
   left.trim().localeCompare(right.trim(), undefined, { sensitivity: "base" });
+const describeAvailability = (rule: AvailabilitySchedule) =>
+  rule.mode === "CUSTOM_DATES" ? [...rule.dates].sort().join(", ") : scheduleSummary(rule);
 
 export function CatalogPage() {
   const client = useQueryClient();
   const [editing, setEditing] = useState<CatalogProduct>();
-  const [draft, setDraft] = useState<ProductDraft>(emptyDraft);
+  const [draft, setDraft] = useState<ProductDraft>(() => emptyDraft());
   const [open, setOpen] = useState(false);
+  const [productScheduleAttempts, setProductScheduleAttempts] = useState(0);
   const [archiving, setArchiving] = useState<CatalogProduct>();
   const [categoryFilter, setCategoryFilter] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [availabilityProduct, setAvailabilityProduct] = useState<CatalogProduct>();
+  const [availabilityRule, setAvailabilityRule] = useState<AvailabilitySchedule>(alwaysAvailable);
+  const [availabilityActive, setAvailabilityActive] = useState(true);
+  const [availabilityAttempts, setAvailabilityAttempts] = useState(0);
+  const [availabilityConflict, setAvailabilityConflict] = useState(false);
+  const [availabilityEditorVersion, setAvailabilityEditorVersion] = useState(0);
+  const availabilityFeedback = useRef<HTMLParagraphElement>(null);
   const products = useQuery({
     queryKey: ["catalog-products"],
-    queryFn: () => api<{ items: CatalogProduct[]; serverTime: string }>("/catalog/products"),
+    queryFn: () => api<CatalogProductsData>("/catalog/products"),
     refetchInterval: 30_000,
   });
   const now = useCatalogClock(products.data?.serverTime, products.dataUpdatedAt);
@@ -120,9 +144,12 @@ export function CatalogPage() {
     }
   }
   const selectedCategory = categories.has(categoryFilter) ? categoryFilter : "";
-  const filteredProducts = selectedCategory
+  const categoryProducts = selectedCategory
     ? items.filter((product) => product.category?.trim().toLowerCase() === selectedCategory)
     : items;
+  const filteredProducts = categoryProducts.filter(
+    (p) => !statusFilter || availabilityInfo(p, new Date(now)).availabilityStatus === statusFilter,
+  );
   const groups = new Map<string, { label: string; products: CatalogProduct[] }>();
   for (const product of filteredProducts) {
     const key = product.category?.trim().toLowerCase() ?? "";
@@ -141,13 +168,18 @@ export function CatalogPage() {
   }
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["catalog-products"] });
+    void client.invalidateQueries({ queryKey: ["landing-categories"] });
     void client.invalidateQueries({ queryKey: ["landing-page-builder"] });
     void client.invalidateQueries({ queryKey: ["catalog-discounts"] });
     void client.invalidateQueries({ queryKey: ["public-landing-page"] });
   };
   const save = useMutation({
     mutationFn: () => {
+      const validated = v.safeParse(availabilityScheduleSchema, draft.availabilitySchedule);
+      if (!validated.success) throw new Error("Complete the availability schedule before saving.");
       const payload = {
+        ...(editing ? { expectedRevision: editing.revision ?? 1 } : {}),
+        availabilitySchedule: validated.output,
         name: draft.name.trim(),
         description: draft.description.trim(),
         category: draft.category.trim(),
@@ -198,12 +230,71 @@ export function CatalogPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const saveAvailability = useMutation({
+    mutationFn: () => {
+      if (!availabilityProduct) throw new Error("Select a product");
+      const validated = v.safeParse(availabilityScheduleSchema, availabilityRule);
+      if (!validated.success) throw new Error("Complete the availability schedule before saving.");
+      return api(`/catalog/products/${availabilityProduct._id}/availability`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          isActive: availabilityActive,
+          availabilitySchedule: validated.output,
+          expectedRevision: availabilityProduct.revision ?? 1,
+        }),
+      });
+    },
+    onSuccess: () => {
+      refresh();
+      setAvailabilityProduct(undefined);
+      toast.success("Product availability saved");
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === "PRODUCT_REVISION_CONFLICT") {
+        setAvailabilityConflict(true);
+        reviewAvailability.reset();
+      }
+    },
+  });
+  const reviewAvailability = useMutation({
+    mutationFn: async () => {
+      const data = await api<CatalogProductsData>("/catalog/products");
+      const latest = data.items.find((product) => product._id === availabilityProduct?._id);
+      if (!latest)
+        throw new Error(
+          "This product is no longer available. Close this dialog and refresh the catalog.",
+        );
+      client.setQueryData(["catalog-products"], data);
+      return latest;
+    },
+  });
+  useEffect(() => {
+    if (saveAvailability.error) availabilityFeedback.current?.focus();
+  }, [saveAvailability.error]);
+  function resolveAvailabilityConflict(useLatest: boolean) {
+    const latest = reviewAvailability.data;
+    if (!latest) return;
+    setAvailabilityProduct(latest);
+    if (useLatest) {
+      setAvailabilityRule(latest.availabilitySchedule ?? alwaysAvailable(products.data?.timezone));
+      setAvailabilityActive(latest.isActive);
+      setAvailabilityAttempts(0);
+      setAvailabilityEditorVersion((version) => version + 1);
+    }
+    setAvailabilityConflict(false);
+    saveAvailability.reset();
+    reviewAvailability.reset();
+  }
   function startCreate() {
+    save.reset();
+    setProductScheduleAttempts(0);
     setEditing(undefined);
-    setDraft(emptyDraft());
+    setDraft(emptyDraft(products.data?.timezone));
     setOpen(true);
   }
   function startEdit(product: CatalogProduct) {
+    save.reset();
+    setProductScheduleAttempts(0);
     setEditing(product);
     setDraft(draftFromProduct(product));
     setOpen(true);
@@ -258,6 +349,22 @@ export function CatalogPage() {
         />
       </div>
 
+      <label className="block max-w-xs text-sm font-medium">
+        Availability status
+        <select
+          aria-label="Availability status"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="mt-2 min-h-11 w-full rounded-xl border border-pink-100 px-3"
+        >
+          <option value="">All statuses</option>
+          {["INACTIVE", "ALWAYS", "ACTIVE_NOW", "SCHEDULED", "EXPIRED"].map((status) => (
+            <option key={status} value={status}>
+              {status.replaceAll("_", " ")}
+            </option>
+          ))}
+        </select>
+      </label>
       {items.length > 0 && (
         <div className="max-w-xs space-y-2">
           <label htmlFor="catalog-category-filter" className="text-sm font-medium">
@@ -346,6 +453,16 @@ export function CatalogPage() {
                             : "Archived"}
                         </Badge>
                       </div>
+                      <p className="text-sm text-stone-600">
+                        {availabilityInfo(product, new Date(now)).availabilityStatus.replaceAll(
+                          "_",
+                          " ",
+                        )}{" "}
+                        · {product.scheduleSummary ?? "Always active"}
+                        {product.nextActiveAt
+                          ? ` · Next active ${new Date(product.nextActiveAt).toLocaleString()}`
+                          : ""}
+                      </p>
                       <p className="line-clamp-2 text-sm text-stone-500">
                         {product.description || "No product description yet."}
                       </p>
@@ -375,7 +492,30 @@ export function CatalogPage() {
                                 : `${product.availableQuantity} available`}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            permission={{
+                              path: "/catalog/products/id/availability",
+                              method: "PATCH",
+                            }}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              saveAvailability.reset();
+                              reviewAvailability.reset();
+                              setAvailabilityAttempts(0);
+                              setAvailabilityConflict(false);
+                              setAvailabilityEditorVersion((version) => version + 1);
+                              setAvailabilityProduct(product);
+                              setAvailabilityRule(
+                                product.availabilitySchedule ??
+                                  alwaysAvailable(products.data?.timezone),
+                              );
+                              setAvailabilityActive(product.isActive);
+                            }}
+                          >
+                            Schedule availability
+                          </Button>
                           <Button
                             permission={{ path: "/catalog/products", method: "PUT" }}
                             variant="outline"
@@ -430,6 +570,9 @@ export function CatalogPage() {
             className="mt-5 space-y-5"
             onSubmit={(event) => {
               event.preventDefault();
+              setProductScheduleAttempts((attempts) => attempts + 1);
+              if (!v.safeParse(availabilityScheduleSchema, draft.availabilitySchedule).success)
+                return;
               save.mutate();
             }}
           >
@@ -634,6 +777,15 @@ export function CatalogPage() {
               </div>
             </div>
 
+            <ProductAvailabilityEditor
+              schedule={draft.availabilitySchedule}
+              isActive={draft.isActive}
+              onChange={(availabilitySchedule) => setDraft({ ...draft, availabilitySchedule })}
+              onActiveChange={(isActive) => setDraft({ ...draft, isActive })}
+              showValidationErrors={productScheduleAttempts > 0}
+              validationAttempt={productScheduleAttempts}
+              now={now}
+            />
             <div className="flex flex-wrap gap-4 rounded-xl bg-stone-50 p-3 text-sm">
               <Check
                 label="Featured"
@@ -644,11 +796,6 @@ export function CatalogPage() {
                 label="Can be ordered"
                 checked={draft.isOrderable}
                 onChange={(checked) => setDraft({ ...draft, isOrderable: checked })}
-              />
-              <Check
-                label="Active"
-                checked={draft.isActive}
-                onChange={(checked) => setDraft({ ...draft, isActive: checked })}
               />
             </div>
             <div className="flex justify-end gap-3">
@@ -667,6 +814,168 @@ export function CatalogPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={Boolean(availabilityProduct)}
+        onOpenChange={(value) => {
+          if (!value && !saveAvailability.isPending && !reviewAvailability.isPending)
+            setAvailabilityProduct(undefined);
+        }}
+      >
+        <DialogContent className="flex max-w-2xl flex-col overflow-hidden p-0">
+          <div className="shrink-0 border-b border-stone-200 px-4 py-5 sm:px-6">
+            <DialogTitle className="break-words pr-10">
+              Availability — {availabilityProduct?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Set active dates without changing stock or existing orders.
+            </DialogDescription>
+          </div>
+          <div
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+            data-availability-scroll=""
+          >
+            <fieldset
+              className="space-y-4"
+              disabled={saveAvailability.isPending || reviewAvailability.isPending}
+            >
+              <ProductAvailabilityEditor
+                key={availabilityEditorVersion}
+                showHeading={false}
+                now={now}
+                schedule={availabilityRule}
+                isActive={availabilityActive}
+                onChange={(rule) => {
+                  if (!availabilityConflict) saveAvailability.reset();
+                  setAvailabilityRule(rule);
+                }}
+                onActiveChange={(active) => {
+                  if (!availabilityConflict) saveAvailability.reset();
+                  setAvailabilityActive(active);
+                }}
+                showValidationErrors={availabilityAttempts > 0}
+                validationAttempt={availabilityAttempts}
+              />
+              {saveAvailability.error && (
+                <p
+                  ref={availabilityFeedback}
+                  tabIndex={-1}
+                  role="alert"
+                  className="text-sm text-red-700"
+                >
+                  {saveAvailability.error.message}
+                </p>
+              )}
+              {availabilityConflict && (
+                <section
+                  aria-label="Review availability conflict"
+                  className="space-y-3 rounded-xl border border-amber-400 bg-amber-50 p-4"
+                >
+                  <p className="text-sm">
+                    Your changes are retained. Review the latest saved availability before choosing
+                    which version to use.
+                  </p>
+                  {reviewAvailability.error && (
+                    <p role="alert" className="text-sm text-red-700">
+                      {reviewAvailability.error.message}
+                    </p>
+                  )}
+                  {!reviewAvailability.data ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-11"
+                      onClick={() => reviewAvailability.mutate()}
+                    >
+                      {reviewAvailability.isPending
+                        ? "Loading latest version…"
+                        : "Review latest version"}
+                    </Button>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1 rounded-lg border border-amber-300 bg-white p-3 text-sm">
+                          <h3 className="font-semibold">Latest saved availability</h3>
+                          <p>
+                            {reviewAvailability.data.isActive
+                              ? "Product enabled"
+                              : "Product disabled"}
+                          </p>
+                          <p className="max-h-32 overflow-auto break-words">
+                            {describeAvailability(
+                              reviewAvailability.data.availabilitySchedule ??
+                                alwaysAvailable(products.data?.timezone),
+                            )}
+                          </p>
+                          <p>
+                            {reviewAvailability.data.availabilitySchedule?.timezone ??
+                              products.data?.timezone ??
+                              "Asia/Manila"}
+                          </p>
+                        </div>
+                        <div className="space-y-1 rounded-lg border border-amber-300 bg-white p-3 text-sm">
+                          <h3 className="font-semibold">Your changes</h3>
+                          <p>{availabilityActive ? "Product enabled" : "Product disabled"}</p>
+                          <p className="max-h-32 overflow-auto break-words">
+                            {v.safeParse(availabilityScheduleSchema, availabilityRule).success
+                              ? describeAvailability(availabilityRule)
+                              : "Unfinished schedule"}
+                          </p>
+                          <p>{availabilityRule.timezone}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm">
+                        Choose a version, then select Save availability to apply it.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11"
+                          onClick={() => resolveAvailabilityConflict(false)}
+                        >
+                          Keep my changes
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11"
+                          onClick={() => resolveAvailabilityConflict(true)}
+                        >
+                          Use latest availability
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </section>
+              )}
+            </fieldset>
+          </div>
+          <div className="flex shrink-0 justify-end gap-2 border-t border-stone-200 bg-white px-4 py-4 sm:px-6">
+            <Button
+              variant="outline"
+              className="min-h-11"
+              disabled={saveAvailability.isPending || reviewAvailability.isPending}
+              onClick={() => setAvailabilityProduct(undefined)}
+            >
+              Cancel
+            </Button>
+            <Button
+              permission={{ path: "/catalog/products/id/availability", method: "PATCH" }}
+              className="min-h-11"
+              disabled={
+                saveAvailability.isPending || availabilityConflict || reviewAvailability.isPending
+              }
+              onClick={() => {
+                setAvailabilityAttempts((attempts) => attempts + 1);
+                if (v.safeParse(availabilityScheduleSchema, availabilityRule).success)
+                  saveAvailability.mutate();
+              }}
+            >
+              {saveAvailability.isPending ? "Saving…" : "Save availability"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(archiving)} onOpenChange={(value) => !value && setArchiving(undefined)}>
         <DialogContent>
           <DialogTitle>Archive {archiving?.name}?</DialogTitle>

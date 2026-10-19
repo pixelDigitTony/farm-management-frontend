@@ -1,15 +1,17 @@
 import type * as v from "valibot";
 import type {
+  actionTargetSchema,
+  backgroundSchema,
+  landingPageCommerceSettingsSchema,
   landingPageComponentSchema,
   landingPageSectionSchema,
   landingPageThemeSchema,
-  landingPageCommerceSettingsSchema,
-  motionSchema,
   mediaAssetSchema,
-  actionTargetSchema,
-  backgroundSchema,
+  motionSchema,
 } from "@/lib/landing-page/schema";
+
 export { defaultLandingPageCommerceSettings } from "@/lib/landing-page/schema";
+
 import { defaultLandingPageCommerceSettings } from "@/lib/landing-page/schema";
 export type LandingPageTheme = v.InferOutput<typeof landingPageThemeSchema>;
 export type LandingPageCommerceSettings = v.InferOutput<typeof landingPageCommerceSettingsSchema>;
@@ -42,6 +44,11 @@ export type GalleryComponent = Extract<LandingPageComponent, { type: "GALLERY" }
 export type ContactComponent = Extract<LandingPageComponent, { type: "CONTACT" }>;
 export type CtaComponent = Extract<LandingPageComponent, { type: "CTA" }>;
 export type LandingPageVariant = {
+  revision?: number;
+  landingPageId?: string;
+  categoryBindingVersion?: 1;
+  sourceSavedTemplateId?: string;
+  sourceSavedTemplateRevision?: number;
   _id: string;
   name: string;
   schemaVersion?: 1 | 2;
@@ -73,6 +80,10 @@ export type LandingTemplate = {
 };
 
 export type LandingPageRecord = {
+  hasUnpublishedChanges?: boolean;
+  name?: string;
+  revision?: number;
+  publishedSourceVariantRevision?: number;
   _id: string;
   slug: string;
   siteTitle: string;
@@ -83,6 +94,7 @@ export type LandingPageRecord = {
 };
 
 export type LandingMenuItem = {
+  categoryId?: string;
   _id: string;
   name: string;
   category?: string;
@@ -105,6 +117,9 @@ export type LandingCatalogVariant = {
 };
 
 export type LandingCatalogItem = {
+  categoryId?: string;
+  effectiveActive?: boolean;
+  availabilityStatus?: string;
   originalPrice?: string | number;
   discountedPrice?: string | number;
   discount?: import("@/lib/catalog-discounts").ProductDiscount | null;

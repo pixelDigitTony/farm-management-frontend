@@ -507,6 +507,7 @@ function Catalog({
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const [limit, setLimit] = useState(24);
   const [detail, setDetail] = useState<LandingCatalogItem>();
   const [variantId, setVariantId] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -519,7 +520,11 @@ function Catalog({
   const bound = context.catalogItems.filter(
     (i) =>
       (block.type !== "MENU" || i.sourceType === "MENU_ITEM") &&
-      (!refs.length || refs.includes(i.key)),
+      i.effectiveActive !== false &&
+      (block.content.categoryBinding
+        ? block.content.categoryBinding.mode === "ALL_CATEGORIES" ||
+          block.content.categoryBinding.categoryIds.includes(i.categoryId ?? "")
+        : !refs.length || refs.includes(i.key)),
   );
   const now = useCatalogPricingClock(bound.map((i) => i.discount));
   const categories = [...new Set(bound.map((i) => i.category).filter(Boolean))] as string[];
@@ -555,7 +560,7 @@ function Catalog({
     context.onAdd?.(item, undefined, 1, shopNow);
     setNotice(`${item.name} added to cart`);
   }
-  const cards = shown.map((item) => (
+  const cards = shown.slice(0, limit).map((item) => (
     <article
       key={item.key}
       id={`product-${item.sourceId}`}
@@ -664,9 +669,10 @@ function Catalog({
           <p className="lp-empty" role="status">
             {bound.length
               ? "No matching items. Try another search or choose All."
-              : "Our collection is being updated. Please contact us for details."}
+              : "No products available right now."}
           </p>
         )}
+        {shown.length > limit && <button type="button" className="lp-action" onClick={() => setLimit((value) => value + 24)}>Load more products ({shown.length - limit} remaining)</button>}
         <p className="lp-announcement" role="status">
           {notice}
         </p>
