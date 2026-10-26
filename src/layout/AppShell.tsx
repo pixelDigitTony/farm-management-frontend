@@ -17,7 +17,7 @@ const navGroups = [
       { label: "Cash flow", to: "/cash-flow", icon: "solar:wallet-money-linear" },
       { label: "Calendar & To-do", to: "/calendar", icon: "solar:calendar-minimalistic-linear" },
       {
-        label: "Landing Page",
+        label: "Landing Management",
         to: "/landing-page",
         icon: "solar:palette-round-linear",
         access: "highest",

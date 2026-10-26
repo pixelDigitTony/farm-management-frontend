@@ -73,8 +73,13 @@ export function RegisterPage() {
           </div>
           <h1 className="mt-6 font-display text-3xl font-semibold">Check your email</h1>
           <p className="mt-3 text-sm leading-relaxed text-stone-500">
-            We sent an activation link to <strong className="text-stone-800">{result.email}</strong>
-            . After verification, a super admin must approve the new business account.
+            {result.emailDelivery.status === "DEVELOPMENT"
+              ? "Development only — no email sent for "
+              : result.emailDelivery.status === "FAILED"
+                ? "Account created. Verification email delivery failed for "
+                : "Verification email requested for "}
+            <strong className="text-stone-800">{result.email}</strong>. After verification, a super
+            admin must approve the new business account.
           </p>
           {result.emailDelivery.status === "FAILED" && (
             <Card className="mt-5 border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, sessionUserStore } from "@/api/client";
+import { TemporaryMpin, validMpin } from "@/components/employees/TemporaryMpin";
 import { Header } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,13 @@ type Employee = {
   phone: string;
   role: number;
   status: string;
+  emailVerified?: boolean;
+  emailDelivery?: {
+    status: string;
+    requestedAt?: string;
+    retryAt?: string;
+    retryAfterSeconds?: number;
+  };
 };
 type Invite = {
   _id: string;
@@ -37,6 +45,15 @@ type EmployeeData = {
 export function EmployeesPage() {
   const client = useQueryClient();
   const session = sessionUserStore.get();
+  const [mpin, setMpin] = useState("");
+  const [deliveryNotice, setDeliveryNotice] = useState("");
+  const accountForm = useRef<HTMLFormElement>(null);
+  const creationKey = useRef(crypto.randomUUID());
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const query = useQuery({
     queryKey: ["employees"],
     queryFn: () => api<EmployeeData>("/employees"),
@@ -51,11 +68,32 @@ export function EmployeesPage() {
       path: string;
       method?: string;
       payload?: unknown;
-    }) => api(`/employees${path}`, { method, body: payload ? JSON.stringify(payload) : undefined }),
-    onSuccess: () => {
+    }) =>
+      api<{ emailDelivery?: { status: string } }>(`/employees${path}`, {
+        method,
+        ...(path === "/accounts" ? { headers: { "Idempotency-Key": creationKey.current } } : {}),
+        body: payload ? JSON.stringify(payload) : undefined,
+      }),
+    onSuccess: (result, variables) => {
       client.invalidateQueries({ queryKey: ["employees"] });
       client.invalidateQueries({ queryKey: ["session-user"] });
-      toast.success("Employee settings updated");
+      if (result?.emailDelivery) {
+        const status = result.emailDelivery.status;
+        const message =
+          status === "FAILED"
+            ? "Account saved, but the verification email could not be sent. Retry sending below."
+            : status === "DEVELOPMENT"
+              ? "Account saved. Development only — no email sent. Configure Resend for delivery."
+              : `Account saved. Verification email ${status.toLowerCase()}.`;
+        setDeliveryNotice(message);
+        if (status === "FAILED") toast.error(message);
+        else toast.success(message);
+      } else toast.success("Employee settings updated");
+      if (variables.path === "/accounts") {
+        accountForm.current?.reset();
+        setMpin("");
+        creationKey.current = crypto.randomUUID();
+      }
     },
     onError: (error) => toast.error(error.message),
   });
@@ -69,6 +107,11 @@ export function EmployeesPage() {
         title="Employee management"
         description="Create business accounts, named roles, and private registration links."
       />
+      {deliveryNotice && (
+        <p role="status" className="rounded-xl border border-pink-200 bg-white p-4 text-sm">
+          {deliveryNotice}
+        </p>
+      )}
       <Tabs defaultValue="employees">
         <TabsList aria-label="Employee management sections">
           <TabsTrigger value="employees">Employees</TabsTrigger>
@@ -81,9 +124,14 @@ export function EmployeesPage() {
             </CardHeader>
             <CardContent>
               <form
+                ref={accountForm}
                 className="grid gap-4 sm:grid-cols-2"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (!validMpin(mpin)) {
+                    toast.error("Set a valid 6-digit MPIN first.");
+                    return;
+                  }
                   const f = Object.fromEntries(new FormData(event.currentTarget));
                   mutate.mutate({
                     path: "/accounts",
@@ -114,7 +162,7 @@ export function EmployeesPage() {
                   <Input name="password" type="password" minLength={8} required />
                 </Field>
                 <Field label="Temporary MPIN">
-                  <Input name="mpin" type="password" pattern="[0-9]{6}" maxLength={6} required />
+                  <TemporaryMpin value={mpin} onChange={setMpin} />
                 </Field>
                 <Button className="sm:col-span-2" disabled={mutate.isPending}>
                   Create account
@@ -130,6 +178,7 @@ export function EmployeesPage() {
                   <th className="py-3">Name</th>
                   <th>Email</th>
                   <th>Status</th>
+                  <th>Verification email</th>
                   <th>Role</th>
                 </tr>
               </thead>
@@ -139,6 +188,48 @@ export function EmployeesPage() {
                     <td className="py-4 font-semibold">{user.name}</td>
                     <td>{user.email}</td>
                     <td>{user.status}</td>
+                    <td className="py-3 pr-3">
+                      <p className="text-xs">
+                        {user.emailVerified
+                          ? "Verified"
+                          : user.emailDelivery?.status === "DEVELOPMENT"
+                            ? "Development only — no email sent"
+                            : (user.emailDelivery?.status ?? "Not requested")}
+                      </p>
+                      {user.emailDelivery?.retryAt &&
+                        Date.parse(user.emailDelivery.retryAt) > Date.now() && (
+                          <p className="mt-1 text-xs text-stone-500">
+                            Retry in{" "}
+                            {Math.max(
+                              0,
+                              Math.ceil(
+                                (Date.parse(user.emailDelivery.retryAt) - Date.now()) / 1000,
+                              ),
+                            )}{" "}
+                            seconds
+                          </p>
+                        )}
+                      {!user.emailVerified && !["DISABLED", "LOCKED"].includes(user.status) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          disabled={
+                            mutate.isPending ||
+                            Boolean(
+                              user.emailDelivery?.retryAt &&
+                                Date.parse(user.emailDelivery.retryAt) > Date.now(),
+                            )
+                          }
+                          onClick={() =>
+                            mutate.mutate({ path: `/accounts/${user._id}/resend-verification` })
+                          }
+                        >
+                          Resend verification
+                        </Button>
+                      )}
+                    </td>
                     <td>
                       <select
                         className="rounded-lg border p-2"

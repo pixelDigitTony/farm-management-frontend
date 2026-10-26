@@ -11,6 +11,11 @@ export function InviteRegisterPage() {
   const { tokenId = "" } = useParams();
   const [complete, setComplete] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [delivery, setDelivery] = useState<{
+    status: string;
+    developmentVerificationUrl?: string;
+  }>();
+  const [email, setEmail] = useState("");
   const invite = useQuery({
     queryKey: ["invite", tokenId],
     queryFn: () => api<{ valid: boolean }>(`/invites/${tokenId}`),
@@ -23,7 +28,9 @@ export function InviteRegisterPage() {
       return toast.error("Credential confirmations do not match");
     setLoading(true);
     try {
-      await api(`/invites/${tokenId}/register`, {
+      const result = await api<{
+        emailDelivery: { status: string; developmentVerificationUrl?: string };
+      }>(`/invites/${tokenId}/register`, {
         method: "POST",
         body: JSON.stringify({
           ownerName: f.name,
@@ -33,6 +40,8 @@ export function InviteRegisterPage() {
           mpin: f.mpin,
         }),
       });
+      setDelivery(result.emailDelivery);
+      setEmail(String(f.email));
       setComplete(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Registration failed");
@@ -60,6 +69,41 @@ export function InviteRegisterPage() {
         <p className="mt-3 text-stone-500">
           Verify your email before signing in to the business account.
         </p>
+        {delivery?.status === "FAILED" && (
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            Account created, but the verification email could not be sent. Request another email
+            below.
+          </p>
+        )}
+        {delivery?.status === "DEVELOPMENT" && (
+          <p className="mt-3 text-sm text-amber-800">Development only — no email sent.</p>
+        )}
+        {delivery?.developmentVerificationUrl && (
+          <a className="mt-3 block text-sm underline" href={delivery.developmentVerificationUrl}>
+            Open development verification link
+          </a>
+        )}
+        <Button
+          variant="outline"
+          className="mt-4"
+          disabled={loading}
+          onClick={async () => {
+            setLoading(true);
+            try {
+              const result = await api<{ message: string }>("/auth/resend-verification", {
+                method: "POST",
+                body: JSON.stringify({ email }),
+              });
+              toast.success(result.message);
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : "Unable to request email");
+            } finally {
+              setLoading(false);
+            }
+          }}
+        >
+          Resend verification email
+        </Button>
         <Button className="mt-6 w-full" asChild>
           <Link to="/login">Return to sign in</Link>
         </Button>

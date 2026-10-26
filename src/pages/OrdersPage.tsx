@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { OrderEmailInbox } from "@/components/orders/OrderEmailInbox";
 import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,13 @@ function statusTone(status: CustomerOrderStatus): "neutral" | "green" | "amber" 
 
 export function OrdersPage() {
   const client = useQueryClient();
+  const [view, setView] = useState<"orders" | "inbox">("orders");
+  const [messageOrderId, setMessageOrderId] = useState<string>();
+  const openMessages = (id: string) => {
+    setMessageOrderId(id);
+    setSelected(undefined);
+    setView("inbox");
+  };
   const [status, setStatus] = useState<"ALL" | CustomerOrderStatus>("PENDING");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerOrder>();
@@ -104,87 +112,123 @@ export function OrdersPage() {
           Refresh
         </Button>
       </Header>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Metric
-          label="Pending"
-          value={orders.data?.pendingCount ?? 0}
-          icon="solar:inbox-line-linear"
-        />
-        <Metric
-          label="Showing"
-          value={orders.data?.items.length ?? 0}
-          icon="solar:clipboard-list-linear"
-        />
-        <Metric label="Auto refresh" value="30 sec" icon="solar:refresh-circle-linear" />
+      <div role="tablist" aria-label="Customer order views" className="flex gap-2">
+        <Button
+          role="tab"
+          aria-selected={view === "orders"}
+          variant={view === "orders" ? "default" : "outline"}
+          onClick={() => setView("orders")}
+        >
+          Orders
+        </Button>
+        <Button
+          role="tab"
+          aria-selected={view === "inbox"}
+          variant={view === "inbox" ? "default" : "outline"}
+          onClick={() => setView("inbox")}
+        >
+          Inbox
+        </Button>
       </div>
-      <Card>
-        <CardContent className="flex flex-wrap gap-3 p-4">
-          <div className="relative min-w-64 flex-1">
-            <Icon icon="solar:magnifer-linear" className="absolute left-3 top-3.5 text-stone-400" />
-            <Input
-              className="pl-9"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Order number, customer, or phone"
-            />
-          </div>
-          <select
-            className="h-11 rounded-xl border border-pink-100 bg-white px-3 text-sm"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as typeof status)}
-          >
-            {statuses.map((value) => (
-              <option key={value} value={value}>
-                {value === "ALL" ? "All statuses" : value.replaceAll("_", " ")}
-              </option>
-            ))}
-          </select>
-        </CardContent>
-      </Card>
-      {(orders.data?.items ?? []).length ? (
-        <div className="space-y-3">
-          {orders.data?.items.map((order) => (
-            <Card key={order._id} className="transition hover:border-pink-300">
-              <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-display text-lg font-semibold">{order.orderNumber}</h2>
-                    <Badge tone={statusTone(order.status)}>
-                      {order.status.replaceAll("_", " ")}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-sm text-stone-500">
-                    {format(new Date(order.createdAt), "MMM d, yyyy h:mm a")}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-semibold">{order.customer.name}</p>
-                  <p className="text-sm text-stone-500">{order.customer.phone}</p>
-                </div>
-                <div>
-                  <p className="font-bold text-pink-700">{formatPeso(order.total)}</p>
-                  <p className="text-sm text-stone-500">
-                    {order.items.reduce((sum, item) => sum + item.quantity, 0)} item(s) ·{" "}
-                    {order.fulfillmentMethod.toLowerCase()}
-                  </p>
-                </div>
-                <Button variant="outline" onClick={() => setSelected(order)}>
-                  View order
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+      <OrderEmailInbox
+        visible={view === "inbox"}
+        initialOrderId={messageOrderId}
+        onViewOrder={(id) => {
+          void api<CustomerOrder>(`/orders/${id}`)
+            .then(setSelected)
+            .catch((error) => toast.error(error.message));
+        }}
+      />
+      <div hidden={view !== "orders"} className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Metric
+            label="Pending"
+            value={orders.data?.pendingCount ?? 0}
+            icon="solar:inbox-line-linear"
+          />
+          <Metric
+            label="Showing"
+            value={orders.data?.items.length ?? 0}
+            icon="solar:clipboard-list-linear"
+          />
+          <Metric label="Auto refresh" value="30 sec" icon="solar:refresh-circle-linear" />
         </div>
-      ) : (
-        <Card className="p-10 text-center">
-          <Icon icon="solar:inbox-line-linear" className="mx-auto size-12 text-pink-300" />
-          <h2 className="mt-4 font-display text-xl font-semibold">No matching orders</h2>
-          <p className="mt-2 text-sm text-stone-500">
-            New landing-page checkouts will appear here automatically.
-          </p>
+        <Card>
+          <CardContent className="flex flex-wrap gap-3 p-4">
+            <div className="relative min-w-64 flex-1">
+              <Icon
+                icon="solar:magnifer-linear"
+                className="absolute left-3 top-3.5 text-stone-400"
+              />
+              <Input
+                className="pl-9"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Order number, customer, or phone"
+              />
+            </div>
+            <select
+              className="h-11 rounded-xl border border-pink-100 bg-white px-3 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as typeof status)}
+            >
+              {statuses.map((value) => (
+                <option key={value} value={value}>
+                  {value === "ALL" ? "All statuses" : value.replaceAll("_", " ")}
+                </option>
+              ))}
+            </select>
+          </CardContent>
         </Card>
-      )}
-
+        {(orders.data?.items ?? []).length ? (
+          <div className="space-y-3">
+            {orders.data?.items.map((order) => (
+              <Card key={order._id} className="transition hover:border-pink-300">
+                <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-display text-lg font-semibold">{order.orderNumber}</h2>
+                      <Badge tone={statusTone(order.status)}>
+                        {order.status.replaceAll("_", " ")}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-stone-500">
+                      {format(new Date(order.createdAt), "MMM d, yyyy h:mm a")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-semibold">{order.customer.name}</p>
+                    <p className="text-sm text-stone-500">{order.customer.phone}</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-pink-700">{formatPeso(order.total)}</p>
+                    <p className="text-sm text-stone-500">
+                      {order.items.reduce((sum, item) => sum + item.quantity, 0)} item(s) ·{" "}
+                      {order.fulfillmentMethod.toLowerCase()}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => setSelected(order)}>
+                      View order
+                    </Button>
+                    <Button variant="outline" onClick={() => openMessages(order._id)}>
+                      Messages
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="p-10 text-center">
+            <Icon icon="solar:inbox-line-linear" className="mx-auto size-12 text-pink-300" />
+            <h2 className="mt-4 font-display text-xl font-semibold">No matching orders</h2>
+            <p className="mt-2 text-sm text-stone-500">
+              New landing-page checkouts will appear here automatically.
+            </p>
+          </Card>
+        )}
+      </div>
       <Dialog open={Boolean(selected)} onOpenChange={(value) => !value && setSelected(undefined)}>
         <DialogContent className="max-w-2xl">
           <DialogTitle>{selected?.orderNumber}</DialogTitle>
@@ -192,6 +236,11 @@ export function OrdersPage() {
             {selected && format(new Date(selected.createdAt), "MMMM d, yyyy 'at' h:mm a")}
           </DialogDescription>
           {selected && <OrderDetails order={selected} />}
+          {selected && (
+            <Button className="mt-4" variant="outline" onClick={() => openMessages(selected._id)}>
+              Messages
+            </Button>
+          )}
           {selected && nextStatus[selected.status] && (
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <Button variant="outline" onClick={() => setCancelling(selected)}>

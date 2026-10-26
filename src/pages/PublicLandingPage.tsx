@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { useLandingAnalytics } from "@/hooks/useLandingAnalytics";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import { formatPeso } from "@/lib/utils";
 import type {
@@ -29,6 +30,7 @@ import type {
 import { defaultLandingPageCommerceSettings, normalizeLandingSections } from "@/types/landing-page";
 
 type PublicLandingPage = {
+  analyticsEnabled?: boolean;
   pageId?: string;
   businessId?: string;
   nextTransitionAt?: string | null;
@@ -112,6 +114,11 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     page.data?.pageId && page.data.businessId
       ? `miss-v-cart:${page.data.businessId}:${page.data.pageId}`
       : cartKey(slug);
+  const analytics = useLandingAnalytics(
+    slug,
+    page.data?.pageId,
+    page.data?.analyticsEnabled === true,
+  );
   const cartPage = useRef(page.data);
   cartPage.current = page.data;
   const hasPageData = Boolean(page.data);
@@ -318,6 +325,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     const fulfillmentMethod = String(values.fulfillmentMethod);
     order.mutate({
       idempotencyKey,
+      analyticsSessionId: analytics.sessionId(),
       customer: {
         name: String(values.name).trim(),
         phone: String(values.phone).trim(),
@@ -398,6 +406,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     setCartOpen(true);
   };
   async function beginCheckout() {
+    analytics.track("checkout_started");
     setCheckingPrices(true);
     const result = await page.refetch();
     setCheckingPrices(false);
@@ -543,6 +552,30 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   ) : undefined;
   return (
     <>
+      {page.data.analyticsEnabled && (
+        <aside
+          aria-label="Visitor analytics preference"
+          className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 border-b bg-stone-50 px-4 py-2 text-xs text-stone-600"
+        >
+          <p>
+            {analytics.preference === "unknown"
+              ? "Allow anonymous visitor statistics to help this business improve its page?"
+              : `Visitor statistics: ${analytics.preference === "accepted" ? "allowed" : "declined"}.`}
+          </p>
+          <div className="flex gap-2">
+            {analytics.preference !== "accepted" && (
+              <Button size="sm" variant="outline" onClick={() => analytics.choose("accepted")}>
+                Allow statistics
+              </Button>
+            )}
+            {analytics.preference !== "declined" && (
+              <Button size="sm" variant="outline" onClick={() => analytics.choose("declined")}>
+                Decline statistics
+              </Button>
+            )}
+          </div>
+        </aside>
+      )}
       <LandingPageRenderer
         theme={page.data.variant.theme}
         schemaVersion={page.data.variant.schemaVersion}
@@ -780,6 +813,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   }
                   setReviewedPrices(pricingSignature);
                   setPriceNotice("");
+                  analytics.track("checkout_started");
                   setCheckout(true);
                 }}
               >

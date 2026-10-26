@@ -18,6 +18,7 @@ import { PreviewFrame } from "@/components/landing-page/editor/PreviewFrame";
 import { SectionTree } from "@/components/landing-page/editor/SectionTree";
 import { SubdomainField } from "@/components/landing-page/editor/SubdomainField";
 import { LandingIcon as Icon } from "@/components/landing-page/LandingIcon";
+import { LandingStatisticsDialog } from "@/components/landing-page/LandingStatisticsDialog";
 import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -67,6 +68,7 @@ function documentBody(d: LandingPageVariant) {
 export function LandingPageBuilderPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [statisticsPage, setStatisticsPage] = useState<LandingPageRecord>();
   const pageId = searchParams.get("page") ?? "";
   const builderKey = ["landing-page-builder", pageId || "legacy"];
   const revisions = useRef(new Map<string, number>());
@@ -586,7 +588,7 @@ export function LandingPageBuilderPage() {
           <Link to="/" className="text-sm">
             ← Back to workspace
           </Link>
-          <h1 className="mt-4 font-display text-3xl font-semibold">Landing pages</h1>
+          <h1 className="mt-4 font-display text-3xl font-semibold">Landing Management</h1>
           <p className="mt-2 text-sm text-stone-500">
             Manage independent storefronts and publish each page at its own address.
           </p>
@@ -628,6 +630,9 @@ export function LandingPageBuilderPage() {
                 )}
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={() => switchPage(item._id)}>Open editor</Button>
+                  <Button variant="outline" onClick={() => setStatisticsPage(item)}>
+                    View Statistics
+                  </Button>
                   {item.isPublished && (
                     <Button asChild variant="outline">
                       <a href={getPublicSiteUrl(item.slug)} target="_blank" rel="noreferrer">
@@ -639,6 +644,13 @@ export function LandingPageBuilderPage() {
               </article>
             ))}
           </div>
+        )}
+        {statisticsPage && (
+          <LandingStatisticsDialog
+            key={statisticsPage._id}
+            page={statisticsPage}
+            onClose={() => setStatisticsPage(undefined)}
+          />
         )}
         {!pageList.isLoading && pageList.data?.items.length === 0 && (
           <p className="rounded-2xl border border-dashed border-pink-200 p-8 text-center">
@@ -708,7 +720,7 @@ export function LandingPageBuilderPage() {
           type="button"
           className="lb-back"
           aria-label="Back to landing pages"
-          title="Back to landing pages"
+          title="Back to Landing Management"
           disabled={busy}
           onClick={() => void mutate(async () => switchPage(""))}
         >
