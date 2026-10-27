@@ -110,6 +110,7 @@ export function CatalogPage() {
   const [open, setOpen] = useState(false);
   const [productScheduleAttempts, setProductScheduleAttempts] = useState(0);
   const [archiving, setArchiving] = useState<CatalogProduct>();
+  const [categorySearch, setCategorySearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -147,9 +148,19 @@ export function CatalogPage() {
   const categoryProducts = selectedCategory
     ? items.filter((product) => product.category?.trim().toLowerCase() === selectedCategory)
     : items;
+  const categoryQuery = categorySearch.trim().toLowerCase();
   const filteredProducts = categoryProducts.filter(
-    (p) => !statusFilter || availabilityInfo(p, new Date(now)).availabilityStatus === statusFilter,
+    (product) =>
+      (product.category?.trim() || "Uncategorized").toLowerCase().includes(categoryQuery) &&
+      (!statusFilter ||
+        availabilityInfo(product, new Date(now)).availabilityStatus === statusFilter),
   );
+  const hasFilters = Boolean(categorySearch || selectedCategory || statusFilter);
+  function clearFilters() {
+    setCategorySearch("");
+    setCategoryFilter("");
+    setStatusFilter("");
+  }
   const groups = new Map<string, { label: string; products: CatalogProduct[] }>();
   for (const product of filteredProducts) {
     const key = product.category?.trim().toLowerCase() ?? "";
@@ -349,46 +360,81 @@ export function CatalogPage() {
         />
       </div>
 
-      <label className="block max-w-xs text-sm font-medium">
-        Availability status
-        <select
-          aria-label="Availability status"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="mt-2 min-h-11 w-full rounded-xl border border-pink-100 px-3"
-        >
-          <option value="">All statuses</option>
-          {["INACTIVE", "ALWAYS", "ACTIVE_NOW", "SCHEDULED", "EXPIRED"].map((status) => (
-            <option key={status} value={status}>
-              {status.replaceAll("_", " ")}
-            </option>
-          ))}
-        </select>
-      </label>
-      {items.length > 0 && (
-        <div className="max-w-xs space-y-2">
-          <label htmlFor="catalog-category-filter" className="text-sm font-medium">
-            Category
-          </label>
-          <select
-            id="catalog-category-filter"
-            value={selectedCategory}
-            onChange={(event) => setCategoryFilter(event.target.value)}
-            className="h-11 w-full rounded-xl border border-pink-100 bg-white px-3 text-sm outline-none focus:border-pink-600 focus:ring-3 focus:ring-pink-600/10"
-          >
-            <option value="">All categories</option>
-            {[...categories.entries()]
-              .sort(([, left], [, right]) => alphabetical(left, right))
-              .map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
+      <search aria-label="Product catalog filters" className="space-y-3">
+        <div className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div className="min-w-0 space-y-2">
+            <label htmlFor="catalog-category-search" className="text-sm font-medium">
+              Search by category
+            </label>
+            <Input
+              id="catalog-category-search"
+              type="search"
+              placeholder="e.g. Clothing, farm products"
+              value={categorySearch}
+              onChange={(event) => setCategorySearch(event.target.value)}
+            />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <label htmlFor="catalog-category-filter" className="text-sm font-medium">
+              Category
+            </label>
+            <select
+              id="catalog-category-filter"
+              value={selectedCategory}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+              className="h-11 w-full rounded-xl border border-pink-100 bg-white px-3 text-sm outline-none focus:border-pink-600 focus:ring-3 focus:ring-pink-600/10"
+            >
+              <option value="">All categories</option>
+              {[...categories.entries()]
+                .sort(([, left], [, right]) => alphabetical(left, right))
+                .map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <label className="block min-w-0 text-sm font-medium">
+            Availability status
+            <select
+              aria-label="Availability status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="mt-2 min-h-11 w-full rounded-xl border border-pink-100 bg-white px-3"
+            >
+              <option value="">All statuses</option>
+              {["INACTIVE", "ALWAYS", "ACTIVE_NOW", "SCHEDULED", "EXPIRED"].map((status) => (
+                <option key={status} value={status}>
+                  {status.replaceAll("_", " ")}
                 </option>
               ))}
-          </select>
+            </select>
+          </label>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={!hasFilters}
+            onClick={clearFilters}
+          >
+            Clear filters
+          </Button>
         </div>
-      )}
+        <p role="status" className="text-sm text-stone-500">
+          Showing {filteredProducts.length} of {items.length} products
+        </p>
+      </search>
 
-      {items.length ? (
+      {items.length > 0 && filteredProducts.length === 0 ? (
+        <Card className="p-10 text-center">
+          <h2 className="font-display text-xl font-semibold">No matching products</h2>
+          <p className="mt-2 text-sm text-stone-500">
+            Try another category search or clear the filters to see all products.
+          </p>
+          <Button variant="outline" className="mt-5" onClick={clearFilters}>
+            Show all products
+          </Button>
+        </Card>
+      ) : items.length ? (
         <div className="space-y-8">
           {sections.map(([key, group]) => (
             <section key={key} className="space-y-4">
