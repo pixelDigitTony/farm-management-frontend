@@ -239,15 +239,6 @@ export function OrderEmailInbox({
   const configured = history.data?.pages[0]?.configured && settings.data?.configured;
   return (
     <section hidden={!visible} aria-label="Order email inbox" className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          variant="outline"
-          onClick={refresh}
-          disabled={history.isFetching || inbox.isFetching || health.isFetching}
-        >
-          Refresh messages
-        </Button>
-      </div>
       {health.isError && (
         <QueryError
           message="Receiving status is temporarily unavailable. Saved messages remain available."

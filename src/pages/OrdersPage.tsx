@@ -1,9 +1,9 @@
 import { Icon } from "@iconify/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/api/client";
+import { api, sessionUserStore } from "@/api/client";
 import { OrderEmailInbox } from "@/components/orders/OrderEmailInbox";
 import { Header } from "@/components/PageHeader";
 import { QueryError } from "@/components/QueryError";
@@ -24,6 +24,12 @@ const statuses: Array<"ALL" | CustomerOrderStatus> = [
   "COMPLETED",
   "CANCELLED",
   "ALL",
+];
+const inboxQueryKeys = [
+  "order-inbox",
+  "order-messages",
+  "order-email-health",
+  "order-email-settings",
 ];
 const nextStatus: Partial<Record<CustomerOrderStatus, CustomerOrderStatus>> = {
   PENDING: "CONFIRMED",
@@ -47,6 +53,11 @@ function statusTone(status: CustomerOrderStatus): "neutral" | "green" | "amber" 
 
 export function OrdersPage() {
   const client = useQueryClient();
+  const scope = sessionUserStore.get()?.id ?? "anonymous";
+  const inboxFetching = useIsFetching({
+    predicate: (query) =>
+      query.queryKey[1] === scope && inboxQueryKeys.includes(String(query.queryKey[0])),
+  });
   const [view, setView] = useState<"orders" | "inbox">("orders");
   const [messageOrderId, setMessageOrderId] = useState<string>();
   const openMessages = (id: string) => {
@@ -69,6 +80,12 @@ export function OrdersPage() {
     refetchInterval: 30_000,
   });
   const refresh = () => void client.invalidateQueries({ queryKey: ["customer-orders"] });
+  const refreshing = view === "orders" ? orders.isFetching : inboxFetching > 0;
+  const refreshView = () => {
+    if (view === "orders") void orders.refetch();
+    else
+      for (const key of inboxQueryKeys) void client.invalidateQueries({ queryKey: [key, scope] });
+  };
   const update = useMutation({
     mutationFn: ({
       order,
@@ -103,16 +120,9 @@ export function OrdersPage() {
         title="Customer Orders"
         description="Review orders submitted from your public landing page, starting with pending requests."
       >
-        {view === "orders" && (
-          <Button
-            variant="outline"
-            onClick={() => void orders.refetch()}
-            disabled={orders.isFetching}
-          >
-            <Icon icon="solar:refresh-linear" className={orders.isFetching ? "animate-spin" : ""} />{" "}
-            Refresh
-          </Button>
-        )}
+        <Button variant="outline" onClick={refreshView} disabled={refreshing}>
+          <Icon icon="solar:refresh-linear" className={refreshing ? "animate-spin" : ""} /> Refresh
+        </Button>
       </Header>
       <div role="tablist" aria-label="Customer order views" className="flex gap-2">
         <Button

@@ -106,6 +106,7 @@ try {
       return send({ items: [] });
     });
     await page.goto(`${base}/orders`);
+    await page.getByRole("button", { name: "Refresh", exact: true }).waitFor();
     await page.getByRole("button", { name: "Messages", exact: true }).first().click();
     await page
       .getByRole("log", { name: "Order message history" })
@@ -113,6 +114,7 @@ try {
       .waitFor();
     await page.getByText(/Customer replies are not connected yet/).waitFor();
     await page.getByText(/Recovered reply/).waitFor();
+    assert.equal(await page.getByRole("button", { name: /^Refresh/ }).count(), 1);
     assert(await page.getByRole("textbox", { name: "Email message" }).isDisabled());
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
@@ -129,7 +131,7 @@ try {
     await page.screenshot({ path: `${output}/disconnected-${width}.png`, fullPage: true });
     const previousReads = historyReads;
     healthy = true;
-    await page.getByRole("button", { name: "Refresh messages", exact: true }).click();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await page.getByText(/Customer replies are not connected yet/).waitFor({ state: "hidden" });
     assert(historyReads > previousReads);
     assert(await page.getByRole("textbox", { name: "Email message" }).isEnabled());
