@@ -89,6 +89,14 @@ it("shows statistics failures instead of fabricated zeros", async () => {
 it("shows persisted email messages and sends the composer through the email API", async () => {
   const user = userEvent.setup();
   vi.mocked(api).mockImplementation(async (path, options) => {
+    if (path.startsWith("/orders/email-health"))
+      return {
+        status: "HEALTHY",
+        pending: 0,
+        failed: 0,
+        review: 0,
+        lastProcessedAt: new Date().toISOString(),
+      };
     if (path === "/orders/email-settings")
       return {
         enabled: true,
@@ -124,6 +132,14 @@ it("shows persisted email messages and sends the composer through the email API"
   });
   mount(<OrderEmailInbox visible initialOrderId="order-a" onViewOrder={() => {}} />);
   expect(await screen.findByText("Can I collect tomorrow?")).toBeVisible();
+  expect(await screen.findByText("Customer replies are connected.")).toBeVisible();
+  vi.mocked(api).mockClear();
+  await user.click(screen.getByRole("button", { name: "Refresh messages" }));
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith("/orders/email-health?orderId=order-a", expect.anything()),
+  );
+  expect(api).toHaveBeenCalledWith("/orders/order-a/messages", expect.anything());
+  expect(api).toHaveBeenCalledWith(expect.stringContaining("/orders/inbox"), expect.anything());
   await user.type(screen.getByRole("textbox", { name: "Email message" }), "Yes, tomorrow is fine");
   await user.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
@@ -135,6 +151,50 @@ it("shows persisted email messages and sends the composer through the email API"
       }),
     ),
   );
+});
+it("explains disconnected receiving while preserving accepted history", async () => {
+  vi.mocked(api).mockImplementation(async (path) => {
+    if (path.startsWith("/orders/email-health"))
+      return {
+        status: "INCOMPLETE",
+        pending: 0,
+        failed: 0,
+        review: 1,
+        reasons: ["MISSING_SIGNINGSECRET"],
+      };
+    if (path === "/orders/email-settings")
+      return {
+        enabled: true,
+        configured: true,
+        provider: "resend",
+        canConfigure: true,
+        candidates: [],
+      };
+    if (path.startsWith("/orders/inbox")) return { items: [], nextCursor: null };
+    return {
+      configured: true,
+      order: { _id: "order-a", customer: { name: "Buyer", email: "buyer@example.test" } },
+      items: [
+        {
+          _id: "saved",
+          sequence: 1,
+          bodyText: "Existing accepted reply",
+          direction: "INBOUND",
+          senderKind: "CUSTOMER",
+          deliveryState: "RECEIVED",
+          createdAt: new Date().toISOString(),
+          recovered: true,
+        },
+      ],
+      nextCursor: null,
+    };
+  });
+  mount(<OrderEmailInbox visible initialOrderId="order-a" onViewOrder={() => {}} />);
+  expect(await screen.findByText(/Customer replies are not connected yet/)).toBeVisible();
+  expect(await screen.findByText("Existing accepted reply")).toBeVisible();
+  expect(await screen.findByText(/add the webhook signing secret/)).toBeVisible();
+  expect(screen.getByText(/1 need restricted review/)).toBeVisible();
+  expect(screen.getByText(/Recovered reply/)).toBeVisible();
 });
 it("respects analytics decline and emits one page view after consent", async () => {
   vi.mocked(api).mockResolvedValue({ accepted: true });

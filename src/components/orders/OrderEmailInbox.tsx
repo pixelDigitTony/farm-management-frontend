@@ -28,6 +28,16 @@ type Message = {
   senderName?: string;
   deliveryState: string;
   createdAt: string;
+  receivedAt?: string | null;
+  recovered?: boolean;
+};
+type ReceivingHealth = {
+  status: "INCOMPLETE" | "UNVERIFIED" | "HEALTHY" | "DEGRADED";
+  pending: number;
+  failed: number;
+  review: number;
+  lastProcessedAt: string | null;
+  reasons?: string[];
 };
 type History = {
   items: Message[];
@@ -93,6 +103,8 @@ export function OrderEmailInbox({
       setOrderId("");
       client.removeQueries({ queryKey: ["order-inbox"] });
       client.removeQueries({ queryKey: ["order-messages"] });
+      client.removeQueries({ queryKey: ["order-email-health"] });
+      client.removeQueries({ queryKey: ["order-email-settings"] });
     };
     window.addEventListener("miss-v-session-changed", changed);
     return () => window.removeEventListener("miss-v-session-changed", changed);
@@ -120,6 +132,17 @@ export function OrderEmailInbox({
     queryKey: ["order-email-settings", scope],
     queryFn: ({ signal }) => api<Settings>("/orders/email-settings", { signal }),
     enabled: visible,
+  });
+  const health = useQuery({
+    queryKey: ["order-email-health", scope, orderId],
+    queryFn: ({ signal }) =>
+      api<ReceivingHealth>(
+        `/orders/email-health${orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""}`,
+        { signal },
+      ),
+    enabled: visible,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
   });
   const history = useInfiniteQuery({
     queryKey: ["order-messages", scope, orderId],
@@ -174,6 +197,8 @@ export function OrderEmailInbox({
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["order-messages", scope, orderId] });
     void client.invalidateQueries({ queryKey: ["order-inbox", scope] });
+    void client.invalidateQueries({ queryKey: ["order-email-health", scope] });
+    void client.invalidateQueries({ queryKey: ["order-email-settings", scope] });
   };
   const send = useMutation({
     mutationFn: ({ id, text, key }: { id: string; text: string; key: string }) =>
@@ -214,17 +239,77 @@ export function OrderEmailInbox({
   const configured = history.data?.pages[0]?.configured && settings.data?.configured;
   return (
     <section hidden={!visible} aria-label="Order email inbox" className="space-y-4">
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          onClick={refresh}
+          disabled={history.isFetching || inbox.isFetching || health.isFetching}
+        >
+          Refresh messages
+        </Button>
+      </div>
+      {health.isError && (
+        <QueryError
+          message="Receiving status is temporarily unavailable. Saved messages remain available."
+          retry={() => void health.refetch()}
+        />
+      )}
+      {health.data && (
+        <div
+          role="status"
+          className={`rounded-xl border p-4 text-sm ${health.data.status === "HEALTHY" ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}
+        >
+          <p>
+            {health.data.status === "INCOMPLETE"
+              ? "Customer replies are not connected yet. Ask an administrator to complete email receiving setup."
+              : health.data.status === "DEGRADED"
+                ? "Some customer replies are delayed or need restricted review. Saved messages remain available."
+                : health.data.status === "HEALTHY"
+                  ? "Customer replies are connected."
+                  : "Email receiving has not been verified yet. Saved messages remain available."}
+          </p>
+          {(health.data.pending > 0 || health.data.failed > 0 || health.data.review > 0) && (
+            <p className="mt-1">
+              {health.data.pending} processing · {health.data.failed} failed · {health.data.review}{" "}
+              need restricted review
+            </p>
+          )}
+          {settings.data?.canConfigure && health.data.reasons?.length ? (
+            <p className="mt-2 text-xs">
+              Setup checks:{" "}
+              {health.data.reasons
+                .map(
+                  (reason) =>
+                    ({
+                      MISSING_SIGNINGSECRET: "add the webhook signing secret",
+                      RECEIVING_WEBHOOK_MISSING: "register an active receiving webhook",
+                      WEBHOOK_URL_UNCONFIRMED: "confirm the public backend webhook URL",
+                      WORKER_UNCONFIRMED: "check that the email worker is running",
+                      MISSING_ENABLED: "enable the order inbox",
+                      MISSING_PROVIDER: "configure Resend",
+                      MISSING_RECEIVINGDOMAIN: "configure the receiving domain",
+                      MISSING_PAYLOADSECRET: "configure the email payload secret",
+                      PROVIDER_INSPECTION_UNAVAILABLE: "provider status could not be checked",
+                    })[reason] ?? "ask the administrator to review receiving setup",
+                )
+                .join("; ")}
+              .
+            </p>
+          ) : null}
+        </div>
+      )}
       {settings.isError && (
         <QueryError message={settings.error.message} retry={() => void settings.refetch()} />
       )}
       {settings.data &&
+        health.data?.status !== "INCOMPLETE" &&
         (!settings.data.enabled ||
           !settings.data.configured ||
           !settings.data.recipient ||
           settings.data.provider === "console") && (
           <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
             {!settings.data.enabled || !settings.data.configured
-              ? "Email messaging needs activation and a receiving domain before messages can be sent."
+              ? "Email messaging setup is incomplete. Ask an administrator to complete setup before sending."
               : settings.data.provider === "console"
                 ? "Development only — messages are recorded, but no email is delivered."
                 : "Choose a verified business recipient to receive customer messages by email. The app inbox remains available."}
@@ -404,7 +489,9 @@ export function OrderEmailInbox({
                 )}
                 {history.isSuccess && !messages.length && (
                   <p className="p-6 text-center text-sm text-stone-600">
-                    No messages yet. Send an email to start this order conversation.
+                    {health.data?.status === "HEALTHY"
+                      ? "No messages yet. Send an email to start this order conversation."
+                      : "No saved messages to display. Check email receiving status above."}
                   </p>
                 )}
                 {messages.map((message) => (
@@ -437,7 +524,8 @@ export function OrderEmailInbox({
                       </p>
                     )}
                     <p className="mt-2 text-[10px] text-stone-600">
-                      {timestamp(message.createdAt)} ·{" "}
+                      {timestamp(message.receivedAt ?? message.createdAt)}
+                      {message.recovered ? " · Recovered reply" : ""} ·{" "}
                       {message.deliveryState === "DEVELOPMENT"
                         ? "Development only — no email sent"
                         : message.deliveryState.toLowerCase()}
