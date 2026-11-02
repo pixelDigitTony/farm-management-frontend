@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "@/api/client";
@@ -17,6 +17,12 @@ import { Input, Label } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useLandingAnalytics } from "@/hooks/useLandingAnalytics";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
+import { type CartAddResult, getCartAddResult } from "@/lib/landing-page/cart-add";
+import {
+  landingThemeStyle,
+  PUBLIC_CART_BAR_CLASS,
+  STOREFRONT_PORTAL_CLASS,
+} from "@/lib/landing-page/theme";
 import { formatPeso } from "@/lib/utils";
 import type {
   LandingCatalogItem,
@@ -86,10 +92,52 @@ function lineFromItem(
   };
 }
 
+function restoreStorefrontFocus(opener: HTMLElement | null) {
+  const visible = (element: HTMLElement) => {
+    if (!element.isConnected || element.matches(":disabled")) return false;
+    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+      const style = window.getComputedStyle(node);
+      if (node.hidden || style.display === "none" || style.visibility === "hidden") return false;
+    }
+    return true;
+  };
+  if (opener && visible(opener)) {
+    opener.focus();
+    return;
+  }
+  const alternatives = document.querySelectorAll<HTMLElement>(
+    ".lp-storefront [aria-label^='Open cart'], .lp-storefront [data-lp-search], .lp-storefront a[href], .lp-storefront button",
+  );
+  Array.from(alternatives).find(visible)?.focus();
+}
+
 export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   const { slug: routeSlug = "" } = useParams();
   const slug = hostnameSlug ?? routeSlug;
   const [cart, setCart] = useState<CartLine[]>([]);
+  const cartRef = useRef(cart);
+  const setCartNow = useCallback((next: CartLine[]) => {
+    cartRef.current = next;
+    setCart(next);
+  }, []);
+  const cartOpener = useRef<HTMLElement | null>(null);
+  const optionOpener = useRef<HTMLElement | null>(null);
+  const cartPanel = useRef<HTMLDivElement | null>(null);
+  const pendingRef = useRef(false);
+  const [barElement, setBarElement] = useState<HTMLDivElement | null>(null);
+  const [barHeight, setBarHeight] = useState(0);
+  const [mobile, setMobile] = useState(
+    () => window.matchMedia?.("(max-width: 767px)").matches ?? false,
+  );
+  const [publicDialogOpen, setPublicDialogOpen] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 767px)");
+    if (!media) return;
+    const update = () => setMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const [cartReadySlug, setCartReadySlug] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [checkout, setCheckout] = useState(false);
@@ -166,7 +214,9 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
           unitPrice: price,
           originalPrice: Number((variant ?? item).originalPrice ?? price),
           unavailable:
-            !item.isAvailable || (variant ? !variant.isAvailable : item.variants.length > 0),
+            !item.isAvailable ||
+            item.effectiveActive === false ||
+            (variant ? !variant.isAvailable : item.variants.length > 0),
         };
       }),
     [cart, page.data?.catalogItems, now],
@@ -195,7 +245,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       const legacy = current ? null : localStorage.getItem(cartKey(slug));
       const stored = current ?? legacy;
       const parsed: unknown = stored ? JSON.parse(stored) : [];
-      setCart(
+      setCartNow(
         Array.isArray(parsed)
           ? parsed.filter((line): line is CartLine =>
               Boolean(
@@ -217,10 +267,10 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
           : [],
       );
     } catch {
-      setCart([]);
+      setCartNow([]);
     }
     setCartReadySlug(storageKey);
-  }, [storageKey, hasPageData, slug]);
+  }, [storageKey, hasPageData, slug, setCartNow]);
   useEffect(() => {
     if (cartReadySlug !== storageKey) return;
     try {
@@ -246,9 +296,12 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       ),
     onSuccess: (result) => {
       setSuccess({ orderNumber: result.orderNumber, total: result.total });
-      setCart([]);
+      setCartNow([]);
       setCheckout(false);
       setIdempotencyKey(crypto.randomUUID().replaceAll("-", "_"));
+    },
+    onSettled: () => {
+      pendingRef.current = false;
     },
     onError: async (error) => {
       if (
@@ -268,26 +321,50 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     variant?: LandingCatalogVariant,
     quantity = 1,
     shopNow = false,
-  ) {
-    if (!item.isAvailable || (variant && !variant.isAvailable) || order.isPending) return;
-    setSuccess(undefined);
-    const line = lineFromItem(item, variant, now);
-    line.quantity = Math.max(1, Math.min(99, quantity));
-    setCart((current) => {
-      const existing = current.find((candidate) => candidate.key === line.key);
-      if (!existing) return [...current, line];
-      return current.map((candidate) =>
-        candidate.key === line.key
-          ? { ...candidate, quantity: Math.min(99, candidate.quantity + line.quantity) }
-          : candidate,
-      );
+  ): CartAddResult {
+    const currentItem = cartPage.current?.catalogItems.find(
+      (candidate) =>
+        candidate.key === item.key &&
+        candidate.sourceType === item.sourceType &&
+        candidate.sourceId === item.sourceId,
+    );
+    if (pendingRef.current || order.isPending)
+      return { acceptedQuantity: 0, rejectionReason: "PENDING_SUBMISSION" };
+    if (!currentItem) return { acceptedQuantity: 0, rejectionReason: "UNAVAILABLE_SELECTION" };
+    const currentVariant =
+      variant &&
+      currentItem.variants.find((candidate) => candidate.variantId === variant.variantId);
+    if (variant && !currentVariant)
+      return { acceptedQuantity: 0, rejectionReason: "UNAVAILABLE_SELECTION" };
+    const line = lineFromItem(currentItem, currentVariant, now);
+    const current = cartRef.current;
+    const existing = current.find((candidate) => candidate.key === line.key);
+    const result = getCartAddResult({
+      item: currentItem,
+      variant: currentVariant,
+      requestedQuantity: quantity,
+      currentQuantity: existing?.quantity ?? 0,
+      pending: order.isPending,
     });
+    if (!result.acceptedQuantity) return result;
+    setSuccess(undefined);
+    line.quantity = result.acceptedQuantity;
+    const next = existing
+      ? current.map((candidate) =>
+          candidate.key === line.key
+            ? { ...candidate, quantity: candidate.quantity + result.acceptedQuantity }
+            : candidate,
+        )
+      : [...current, line];
+    setCartNow(next);
     setChoosing(undefined);
     if (page.data?.variant.schemaVersion !== 2 || shopNow) {
       setSuccess(undefined);
       setCheckout(false);
+      captureCartOpener();
       setCartOpen(true);
     }
+    return result;
   }
 
   function handleAdd(
@@ -295,19 +372,74 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     variant?: LandingCatalogVariant,
     quantity = 1,
     shopNow = false,
-  ) {
-    if (item.variants.length && !variant) setChoosing(item);
-    else addLine(item, variant, quantity, shopNow);
+  ): CartAddResult {
+    const currentItem = cartPage.current?.catalogItems.find(
+      (candidate) =>
+        candidate.key === item.key &&
+        candidate.sourceType === item.sourceType &&
+        candidate.sourceId === item.sourceId,
+    );
+    if (!currentItem)
+      return {
+        acceptedQuantity: 0,
+        rejectionReason:
+          pendingRef.current || order.isPending ? "PENDING_SUBMISSION" : "UNAVAILABLE_SELECTION",
+      };
+    if (currentItem.variants.length && !variant) {
+      if (
+        !pendingRef.current &&
+        !order.isPending &&
+        currentItem.isAvailable &&
+        currentItem.effectiveActive !== false
+      ) {
+        optionOpener.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setChoosing(currentItem);
+      }
+      return {
+        acceptedQuantity: 0,
+        rejectionReason:
+          pendingRef.current || order.isPending ? "PENDING_SUBMISSION" : "UNAVAILABLE_SELECTION",
+      };
+    }
+    return addLine(item, variant, quantity, shopNow);
   }
 
   function changeQuantity(key: string, quantity: number) {
-    if (quantity <= 0) setCart((current) => current.filter((line) => line.key !== key));
-    else
-      setCart((current) =>
-        current.map((line) =>
-          line.key === key ? { ...line, quantity: Math.min(99, quantity) } : line,
-        ),
+    if (pendingRef.current || order.isPending) return;
+    const line = cartRef.current.find((candidate) => candidate.key === key);
+    if (!line) return;
+    if (quantity > line.quantity) {
+      const item = cartPage.current?.catalogItems.find(
+        (candidate) =>
+          candidate.sourceType === line.sourceType && candidate.sourceId === line.sourceId,
       );
+      const variant = item?.variants.find((candidate) => candidate.variantId === line.variantId);
+      if (
+        !item ||
+        (line.variantId && !variant) ||
+        !getCartAddResult({ item, variant, currentQuantity: line.quantity }).acceptedQuantity
+      )
+        return;
+    }
+    setCartNow(
+      quantity <= 0
+        ? cartRef.current.filter((candidate) => candidate.key !== key)
+        : cartRef.current.map((candidate) =>
+            candidate.key === key ? { ...candidate, quantity: Math.min(99, quantity) } : candidate,
+          ),
+    );
+  }
+  function captureCartOpener() {
+    const detailOpener = document.querySelector<HTMLElement>("[data-lp-detail-opener]");
+    const active = document.activeElement;
+    cartOpener.current =
+      detailOpener ??
+      (choosing && optionOpener.current
+        ? optionOpener.current
+        : active instanceof HTMLElement && active !== document.body
+          ? active
+          : cartOpener.current);
   }
 
   function submitOrder(event: React.FormEvent<HTMLFormElement>) {
@@ -320,9 +452,11 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
       toast.error("Remove unavailable products from your cart first.");
       return;
     }
-    if (!pricedCart.length || !minimumReached || order.isPending) return;
+    if (!pricedCart.length || !minimumReached || order.isPending || pendingRef.current) return;
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const fulfillmentMethod = String(values.fulfillmentMethod);
+    if (!commerce.fulfillmentMethods.includes(fulfillmentMethod as "PICKUP" | "DELIVERY")) return;
+    pendingRef.current = true;
     order.mutate({
       idempotencyKey,
       analyticsSessionId: analytics.sessionId(),
@@ -349,13 +483,41 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     });
   }
 
+  const barVisible =
+    mobile &&
+    cartCount > 0 &&
+    Boolean(
+      page.data?.variant.commerce?.orderingEnabled ??
+        defaultLandingPageCommerceSettings.orderingEnabled,
+    ) &&
+    (page.data?.variant.schemaVersion !== 2 || page.data.variant.goal === "SHOP") &&
+    !publicDialogOpen &&
+    !choosing &&
+    !cartOpen;
+  useEffect(() => {
+    const element = barElement;
+    if (!element || !barVisible) {
+      setBarHeight(0);
+      return;
+    }
+    const measure = () => setBarHeight(element.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [barElement, barVisible]);
+
   if (page.isLoading)
     return (
       <div className="mx-auto max-w-6xl p-6">
         <PageSkeleton cards={4} />
       </div>
     );
-  if (page.isError || !page.data)
+  if (!page.data && page.error instanceof ApiError && page.error.status === 404)
     return (
       <main className="grid min-h-screen place-items-center bg-blush-50 p-6 text-center">
         <div>
@@ -364,6 +526,16 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
           <p className="mt-2 text-sm text-stone-500">
             Check the link or ask the business owner for the current address.
           </p>
+        </div>
+      </main>
+    );
+  if (!page.data)
+    return (
+      <main className="grid min-h-screen place-items-center p-6 text-center" role="alert">
+        <div>
+          <h1>Unable to load this page</h1>
+          <p>Please check your connection and try again.</p>
+          <Button onClick={() => void page.refetch()}>Retry</Button>
         </div>
       </main>
     );
@@ -401,6 +573,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     .flatMap((s) => s.components)
     .find((c) => c.id === commerce.contactBlockId && c.type === "CONTACT" && c.enabled);
   const openCart = () => {
+    captureCartOpener();
     setSuccess(undefined);
     setCheckout(false);
     setCartOpen(true);
@@ -419,6 +592,17 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     setSuccess(undefined);
     setCheckout(true);
   }
+  const barAvailable = mobile && commerce.orderingEnabled && cartCount > 0;
+  const showBar = barVisible;
+  const themeStyle = landingThemeStyle(page.data.variant.theme);
+  const refreshWarning = page.isError ? (
+    <div role="status" className="lp-refresh-warning">
+      Unable to refresh this page. Your current information is retained.{" "}
+      <Button type="button" variant="outline" onClick={() => void page.refetch()}>
+        Retry
+      </Button>
+    </div>
+  ) : null;
   const inlineOrder = inline ? (
     <div className="space-y-5">
       <h3>Shopping cart summary</h3>
@@ -576,6 +760,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
           </div>
         </aside>
       )}
+      {!cartOpen && refreshWarning}
       <LandingPageRenderer
         theme={page.data.variant.theme}
         schemaVersion={page.data.variant.schemaVersion}
@@ -585,39 +770,66 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
         menuItems={page.data.menuItems}
         catalogItems={page.data.catalogItems ?? []}
         onAddToCart={commerce.orderingEnabled ? handleAdd : undefined}
+        cartPending={order.isPending}
         cartCount={cartCount}
         onOpenCart={openCart}
+        onPublicDialogChange={setPublicDialogOpen}
         inlineOrder={inlineOrder}
         contactBlockId={commerce.contactBlockId}
       />
       {commerce.orderingEnabled && (page.data.catalogItems?.length ?? 0) > 0 && (
         <button
           type="button"
-          className={`fixed bottom-5 z-40 flex items-center gap-3 rounded-full px-5 py-3 font-bold text-white shadow-2xl transition hover:-translate-y-0.5 ${
-            commerce.cartButtonPosition === "BOTTOM_LEFT" ? "left-5" : "right-5"
-          }`}
+          className={`hidden md:flex fixed bottom-5 z-40 items-center gap-3 rounded-full px-5 py-3 font-bold shadow-2xl ${commerce.cartButtonPosition === "BOTTOM_LEFT" ? "left-5" : "right-5"}`}
           style={{
             background: page.data.variant.theme.primaryColor,
             color: contrastingButtonText(page.data.variant.theme.primaryColor),
           }}
-          onClick={() => {
-            setSuccess(undefined);
-            setCheckout(false);
-            setCartOpen(true);
-          }}
+          onClick={openCart}
         >
-          <Icon icon="solar:cart-large-2-linear" className="size-5" />
-          {commerce.cartButtonLabel}
-          {cartCount > 0 && (
-            <span className="grid size-6 place-items-center rounded-full bg-white text-xs text-stone-900">
-              {cartCount}
-            </span>
-          )}
+          <Icon icon="solar:cart-large-2-linear" className="size-5" /> {commerce.cartButtonLabel}{" "}
+          {cartCount > 0 && cartCount}
         </button>
+      )}
+      {barAvailable && (
+        <>
+          {showBar && (
+            <div
+              className="lp-public-cart-bar-spacer"
+              aria-hidden="true"
+              style={{ height: barHeight ? barHeight + 16 : undefined }}
+            />
+          )}
+          <div
+            className={PUBLIC_CART_BAR_CLASS}
+            ref={setBarElement}
+            style={{
+              ...themeStyle,
+              background: undefined,
+              color: undefined,
+              display: showBar ? undefined : "none",
+            }}
+            hidden={!showBar}
+          >
+            <span>
+              {cartCount} item{cartCount === 1 ? "" : "s"} · {formatPeso(cartTotal)}
+            </span>
+            <button type="button" onClick={openCart}>
+              View cart
+            </button>
+          </div>
+        </>
       )}
 
       <Dialog open={Boolean(choosing)} onOpenChange={(value) => !value && setChoosing(undefined)}>
-        <DialogContent>
+        <DialogContent
+          className={`${STOREFRONT_PORTAL_CLASS} lp-commerce-panel`}
+          style={themeStyle}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (!cartOpen) restoreStorefrontFocus(optionOpener.current);
+          }}
+        >
           <DialogTitle>Choose {choosing?.name} options</DialogTitle>
           <DialogDescription>
             Select the size, color, or style before adding this item.
@@ -629,7 +841,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                 key={variant.variantId}
                 type="button"
                 disabled={!variant.isAvailable || !chosenItem.isAvailable}
-                className="flex w-full items-center justify-between rounded-xl border border-pink-100 p-4 text-left transition hover:border-pink-400 disabled:cursor-not-allowed disabled:opacity-45"
+                className="lp-option flex w-full items-center justify-between rounded-xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-45"
                 onClick={() => addLine(chosenItem, variant)}
               >
                 <div>
@@ -643,7 +855,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   )}
                 </div>
                 <div className="text-right">
-                  <div className="text-pink-700">
+                  <div className="lp-commerce-price">
                     <CatalogDiscountPrice
                       liveCountdown
                       pricing={{ ...variant, discount: chosenItem.discount }}
@@ -661,8 +873,23 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={cartOpen} onOpenChange={setCartOpen}>
-        <DialogContent className="max-w-xl">
+      <Dialog
+        open={cartOpen}
+        onOpenChange={(open) => {
+          setCartOpen(open);
+          if (!open) setCheckout(false);
+        }}
+      >
+        <DialogContent
+          className={`${STOREFRONT_PORTAL_CLASS} lp-commerce-panel max-w-xl`}
+          ref={cartPanel}
+          style={themeStyle}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            restoreStorefrontFocus(cartOpener.current);
+          }}
+        >
+          {refreshWarning}
           {success ? (
             <div className="py-5 text-center">
               <div className="mx-auto grid size-16 place-items-center rounded-full bg-emerald-100 text-emerald-700">
@@ -672,11 +899,11 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
               <DialogDescription>
                 The owner will review your order before confirming it.
               </DialogDescription>
-              <div className="mt-6 rounded-2xl bg-pink-50 p-5">
+              <div className="lp-checkout-total mt-6 rounded-2xl p-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-stone-500">
                   Order number
                 </p>
-                <p className="mt-1 text-2xl font-bold text-pink-700">{success.orderNumber}</p>
+                <p className="lp-commerce-price mt-1 text-2xl font-bold">{success.orderNumber}</p>
                 <p className="mt-2 font-semibold">Total: {formatPeso(success.total)}</p>
               </div>
               <Button className="mt-6" onClick={() => setCartOpen(false)}>
@@ -732,26 +959,26 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   ? `${cartCount} item${cartCount === 1 ? "" : "s"} ready for checkout.`
                   : "Your cart is empty."}
               </DialogDescription>
-              <div className="mt-5 max-h-[55vh] space-y-4 overflow-y-auto">
+              <div className="mt-5 space-y-4 lp-cart-lines">
                 {pricedCart.map((line) => (
-                  <div key={line.key} className="flex gap-3 border-b border-pink-100 pb-4">
+                  <div key={line.key} className="lp-cart-line border-b pb-4">
                     {line.mediaUrl ? (
                       <StoredImage
                         src={line.mediaUrl}
                         alt={line.name}
-                        className="size-16 rounded-xl object-cover"
+                        className="lp-cart-line__image size-16 rounded-xl object-cover"
                       />
                     ) : (
-                      <div className="grid size-16 place-items-center rounded-xl bg-pink-50 text-pink-400">
+                      <div className="lp-cart-line__image grid size-16 place-items-center rounded-xl">
                         <Icon icon="solar:box-linear" className="size-7" />
                       </div>
                     )}
-                    <div className="min-w-0 flex-1">
+                    <div className="lp-cart-line__details min-w-0">
                       <p className="font-semibold">{line.name}</p>
                       {line.variantName && (
                         <p className="text-xs text-stone-500">{line.variantName}</p>
                       )}
-                      <p className="mt-1 text-sm font-bold text-pink-700">
+                      <p className="lp-commerce-price mt-1 text-sm font-bold">
                         {"originalPrice" in line && Number(line.originalPrice) > line.unitPrice && (
                           <del className="mr-2 font-normal text-stone-500">
                             {formatPeso(Number(line.originalPrice))}
@@ -763,11 +990,12 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                         <p className="text-xs text-red-700">Unavailable — remove from cart</p>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 self-center">
+                    <div className="lp-cart-line__controls flex items-center gap-1">
                       <Button
                         size="icon"
                         variant="outline"
                         aria-label={`Remove one ${line.name}`}
+                        disabled={order.isPending}
                         onClick={() => changeQuantity(line.key, line.quantity - 1)}
                       >
                         <Icon icon="solar:minus-circle-linear" />
@@ -777,17 +1005,31 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                         size="icon"
                         variant="outline"
                         aria-label={`Add one ${line.name}`}
+                        disabled={order.isPending || line.unavailable || line.quantity >= 99}
                         onClick={() => changeQuantity(line.key, line.quantity + 1)}
                       >
                         <Icon icon="solar:add-circle-linear" />
                       </Button>
                     </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="lp-cart-line__remove"
+                      disabled={order.isPending}
+                      onClick={() => {
+                        changeQuantity(line.key, 0);
+                        requestAnimationFrame(() => cartPanel.current?.focus());
+                      }}
+                    >
+                      Remove {line.name}
+                      {line.variantName ? ` (${line.variantName})` : ""}
+                    </Button>
                   </div>
                 ))}
               </div>
               <div className="mt-5 flex items-center justify-between border-t border-pink-100 pt-5">
                 <span className="font-semibold">Subtotal</span>
-                <span className="text-xl font-bold text-pink-700">{formatPeso(cartTotal)}</span>
+                <span className="lp-commerce-price text-xl font-bold">{formatPeso(cartTotal)}</span>
               </div>
               {!minimumReached && cart.length > 0 && (
                 <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
@@ -847,10 +1089,29 @@ function CheckoutForm({
   const [method, setMethod] = useState<"PICKUP" | "DELIVERY">(
     settings.fulfillmentMethods[0] ?? "PICKUP",
   );
-  const deliveryFee = method === "DELIVERY" ? settings.deliveryFee : 0;
+  const validMethod = settings.fulfillmentMethods.includes(method);
+  const effectiveMethod = validMethod ? method : settings.fulfillmentMethods[0];
+  const [methodNotice, setMethodNotice] = useState("");
+  useEffect(() => {
+    if (!validMethod) {
+      const replacement = settings.fulfillmentMethods[0];
+      if (replacement) setMethod(replacement);
+      setMethodNotice(
+        replacement
+          ? `Your previous delivery method is no longer available. ${replacement === "PICKUP" ? "Pickup" : "Delivery"} was selected.`
+          : "",
+      );
+    }
+  }, [validMethod, settings.fulfillmentMethods]);
+  const deliveryFee = effectiveMethod === "DELIVERY" ? settings.deliveryFee : 0;
   const total = subtotal + deliveryFee;
   return (
-    <form className="mt-5 space-y-4" onSubmit={onSubmit}>
+    <form className="mt-5 space-y-4 lp-checkout-form" onSubmit={onSubmit}>
+      {!effectiveMethod ? (
+        <p role="status">No fulfillment methods are currently available. Please try again later.</p>
+      ) : methodNotice ? (
+        <p role="status">{methodNotice}</p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <label htmlFor="checkout-name">
           <Label>Name</Label>
@@ -874,10 +1135,10 @@ function CheckoutForm({
             <button
               key={option}
               type="button"
-              className={`rounded-xl border p-3 text-sm font-semibold ${method === option ? "border-pink-600 bg-pink-50 text-pink-700" : "border-stone-200"}`}
-              aria-pressed={method === option}
+              className="lp-option rounded-xl border p-3 text-sm font-semibold"
+              aria-pressed={effectiveMethod === option}
               style={
-                theme && method === option
+                theme && effectiveMethod === option
                   ? {
                       background: theme.primaryColor,
                       color: contrastingButtonText(theme.primaryColor),
@@ -885,26 +1146,27 @@ function CheckoutForm({
                     }
                   : undefined
               }
-              onClick={() => setMethod(option)}
+              onClick={() => {
+                setMethod(option);
+                setMethodNotice("");
+              }}
             >
               {option === "PICKUP" ? "Pickup" : "Delivery"}
             </button>
           ))}
         </div>
-        <input type="hidden" name="fulfillmentMethod" value={method} />
+        <input type="hidden" name="fulfillmentMethod" value={effectiveMethod ?? ""} />
       </div>
-      {method === "DELIVERY" && (
-        <label htmlFor="checkout-address">
-          <Label>Delivery address</Label>
-          <textarea
-            id="checkout-address"
-            name="deliveryAddress"
-            required
-            maxLength={500}
-            className="min-h-24 w-full rounded-xl border border-pink-100 p-3 text-sm"
-          />
-        </label>
-      )}
+      <label htmlFor="checkout-address" hidden={effectiveMethod !== "DELIVERY"}>
+        <Label>Delivery address</Label>
+        <textarea
+          id="checkout-address"
+          name="deliveryAddress"
+          required={effectiveMethod === "DELIVERY"}
+          maxLength={500}
+          className="min-h-24 w-full rounded-xl border border-pink-100 p-3 text-sm"
+        />
+      </label>
       <label htmlFor="checkout-notes">
         <Label>Order notes (optional)</Label>
         <textarea
@@ -914,12 +1176,12 @@ function CheckoutForm({
           className="min-h-20 w-full rounded-xl border border-pink-100 p-3 text-sm"
         />
       </label>
-      <div className="rounded-xl bg-pink-50 p-4 text-sm">
+      <div className="lp-checkout-total rounded-xl p-4 text-sm">
         <div className="flex justify-between text-stone-600">
           <span>Subtotal</span>
           <span>{formatPeso(subtotal)}</span>
         </div>
-        {method === "DELIVERY" && (
+        {effectiveMethod === "DELIVERY" && (
           <div className="mt-2 flex justify-between text-stone-600">
             <span>Delivery fee</span>
             <span>{formatPeso(deliveryFee)}</span>
@@ -927,12 +1189,14 @@ function CheckoutForm({
         )}
         <div className="flex justify-between font-bold">
           <span>Total</span>
-          <span className="text-pink-700">{formatPeso(total)}</span>
+          <span className="lp-commerce-price">{formatPeso(total)}</span>
         </div>
-        <p className="mt-2 text-xs text-stone-500">
-          {method === "DELIVERY" ? "Cash on delivery" : "Pay when you pick up the order"}.
-          Submitting does not charge you online.
-        </p>
+        {effectiveMethod && (
+          <p className="mt-2 text-xs text-stone-500">
+            {effectiveMethod === "DELIVERY" ? "Cash on delivery" : "Pay when you pick up the order"}
+            . Submitting does not charge you online.
+          </p>
+        )}
         {settings.checkoutInstructions && (
           <p className="mt-3 border-t border-pink-100 pt-3 text-xs text-stone-600">
             {settings.checkoutInstructions}
@@ -951,7 +1215,7 @@ function CheckoutForm({
               ? { background: theme.primaryColor, color: contrastingButtonText(theme.primaryColor) }
               : undefined
           }
-          disabled={pending || blocked}
+          disabled={pending || blocked || !effectiveMethod}
         >
           {pending ? "Submitting..." : "Place order"}
         </Button>

@@ -1,5 +1,5 @@
-import { type ImgHTMLAttributes, useSyncExternalStore } from "react";
-import { StoredImage } from "@/components/StoredImage";
+import { type ImgHTMLAttributes, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { isStoredImage, StoredImage } from "@/components/StoredImage";
 
 const query = "(max-width:767px)";
 const subscribe = (notify: () => void) => {
@@ -15,23 +15,31 @@ export function ResponsiveImage({
   mobileSrc,
   src,
   srcSet,
+  onSourceChange,
   ...props
-}: ImgHTMLAttributes<HTMLImageElement> & { mobileSrc?: string }) {
+}: ImgHTMLAttributes<HTMLImageElement> & {
+  mobileSrc?: string;
+  onSourceChange?: (src?: string) => void;
+}) {
   const mobile = useSyncExternalStore(subscribe, snapshot, () => false);
   const selected = mobile && mobileSrc ? mobileSrc : src;
+  const notifySource = useRef(onSourceChange);
+  notifySource.current = onSourceChange;
+  useLayoutEffect(() => {
+    notifySource.current?.(selected);
+  }, [selected]);
   return (
-    <picture>
-      <StoredImage
-        {...props}
-        key={selected}
-        src={selected}
-        srcSet={mobile && mobileSrc ? undefined : srcSet}
-        onLoad={(event) => {
-          event.currentTarget.classList.remove("lp-image-failed");
-          event.currentTarget.style.visibility = "";
-          props.onLoad?.(event);
-        }}
-      />
-    </picture>
+    <StoredImage
+      {...props}
+      picture
+      key={selected}
+      src={selected}
+      srcSet={(mobile && mobileSrc) || isStoredImage(selected) ? undefined : srcSet}
+      onLoad={(event) => {
+        event.currentTarget.classList.remove("lp-image-failed");
+        event.currentTarget.style.visibility = "";
+        props.onLoad?.(event);
+      }}
+    />
   );
 }

@@ -1,19 +1,44 @@
 import { useEffect, useRef, useState } from "react";
 import pack from "@/lib/landing-page/assets.json";
+import type { LandingBackgroundState } from "@/lib/landing-page/theme";
 import type { BackgroundSettings } from "@/types/landing-page";
 import { useLandingMotion } from "./motion/LandingMotion";
 import { ResponsiveImage } from "./ResponsiveImage";
 export function LandingBackground({
   settings,
   eager = false,
+  onVisualStateChange,
 }: {
   settings?: BackgroundSettings;
   eager?: boolean;
+  onVisualStateChange?: (state: LandingBackgroundState) => void;
+}) {
+  return (
+    <BackgroundVisual
+      key={JSON.stringify(settings)}
+      settings={settings}
+      eager={eager}
+      onVisualStateChange={onVisualStateChange}
+    />
+  );
+}
+
+function BackgroundVisual({
+  settings,
+  eager,
+  onVisualStateChange,
+}: {
+  settings?: BackgroundSettings;
+  eager: boolean;
+  onVisualStateChange?: (state: LandingBackgroundState) => void;
 }) {
   const root = useRef<HTMLDivElement>(null),
     host = useRef<HTMLDivElement>(null);
   const { mode, off } = useLandingMotion();
   const [loaded, setLoaded] = useState(false);
+  const [posterState, setPosterState] = useState<"loading" | "ready" | "fallback">("loading");
+  const callback = useRef(onVisualStateChange);
+  callback.current = onVisualStateChange;
   const scene = pack.scenes.find((s) => s.id === settings?.threeD?.sceneId);
   const backgroundMode = settings?.mode;
   const backgroundColor = settings?.color ?? "#F5F1EB";
@@ -28,6 +53,15 @@ export function LandingBackground({
       : settings?.mode === "IMAGE"
         ? settings.image?.url
         : undefined;
+  const visualState =
+    loaded || (url && posterState === "ready")
+      ? "ready"
+      : url && posterState === "loading"
+        ? "loading"
+        : "fallback";
+  useEffect(() => {
+    callback.current?.(visualState);
+  }, [visualState]);
   useEffect(() => {
     setLoaded(false);
     const element = host.current,
@@ -75,12 +109,12 @@ export function LandingBackground({
                   if (!pending.signal.aborted && eligible()) setLoaded(true);
                 },
                 onFailure: () => {
-                  if (!stopped) setLoaded(false);
+                  if (!pending.signal.aborted && eligible()) setLoaded(false);
                 },
               });
             })
             .catch(() => {
-              if (!stopped) setLoaded(false);
+              if (!pending.signal.aborted && eligible()) setLoaded(false);
             });
         },
         { rootMargin: "80px" },
@@ -117,9 +151,12 @@ export function LandingBackground({
           alt=""
           fetchPriority={eager ? "high" : "auto"}
           loading={eager ? "eager" : "lazy"}
+          onSourceChange={() => setPosterState("loading")}
           onError={(e) => {
             e.currentTarget.style.visibility = "hidden";
+            setPosterState("fallback");
           }}
+          onLoad={() => setPosterState("ready")}
           style={
             settings?.mode === "IMAGE"
               ? {

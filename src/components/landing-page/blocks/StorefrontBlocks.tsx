@@ -1,19 +1,25 @@
 import { m, useMotionValueEvent, useScroll, useTransform } from "framer-motion";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { effectivePrice, useCatalogPricingClock } from "@/lib/catalog-discounts";
 import pack from "@/lib/landing-page/assets.json";
+import type { CartAddResult, StorefrontAddToCart } from "@/lib/landing-page/cart-add";
+import {
+  type LandingBackgroundState,
+  landingThemeStyle,
+  STOREFRONT_PORTAL_CLASS,
+} from "@/lib/landing-page/theme";
 import type {
   ActionTarget,
   BackgroundSettings,
   LandingCatalogItem,
-  LandingCatalogVariant,
   LandingGoal,
   LandingPageComponent,
   LandingPageSection,
   LandingPageTheme,
   MediaAsset,
+  TemplateId,
 } from "@/types/landing-page";
 import { LandingBackground } from "../Background";
 import { LandingIcon as Icon } from "../LandingIcon";
@@ -30,13 +36,11 @@ export type StorefrontContext = {
   sections: LandingPageSection[];
   catalogItems: LandingCatalogItem[];
   cartCount?: number;
+  cartPending?: boolean;
   onOpenCart?: () => void;
-  onAdd?: (
-    item: LandingCatalogItem,
-    variant?: LandingCatalogVariant,
-    quantity?: number,
-    shopNow?: boolean,
-  ) => void;
+  onAdd?: StorefrontAddToCart;
+  registerDialog?: (id: string, open: boolean) => void;
+  templateId?: TemplateId;
   inlineOrder?: React.ReactNode;
   background?: BackgroundSettings;
   primaryHero?: boolean;
@@ -44,6 +48,32 @@ export type StorefrontContext = {
   highlightKey?: string;
 };
 type Block = LandingPageComponent;
+function focusDestination(id: string, opener: HTMLElement | null) {
+  const root = opener?.closest(".lp-storefront");
+  const destination = root
+    ? [...root.querySelectorAll<HTMLElement>("[id]")].find((element) => element.id === id)
+    : document.getElementById(id);
+  if (!destination) return;
+  destination.scrollIntoView?.({ block: "start" });
+  const previous = destination.getAttribute("tabindex");
+  if (previous === null) destination.setAttribute("tabindex", "-1");
+  destination.focus({ preventScroll: true });
+  if (previous === null)
+    destination.addEventListener("blur", () => destination.removeAttribute("tabindex"), {
+      once: true,
+    });
+}
+function addMessage(item: LandingCatalogItem, result: CartAddResult) {
+  if (result.acceptedQuantity > 0) {
+    const count = result.acceptedQuantity;
+    return `${count} ${count === 1 ? "item" : "items"} of ${item.name} added to cart${result.rejectionReason === "QUANTITY_LIMIT" ? "; quantity limit reached" : ""}`;
+  }
+  if (result.rejectionReason === "PENDING_SUBMISSION")
+    return "Please wait for your order to finish before adding items.";
+  if (result.rejectionReason === "QUANTITY_LIMIT")
+    return "This item has reached the cart quantity limit.";
+  return "This item or option is no longer available.";
+}
 export function hasStorefrontContent(block: Block) {
   switch (block.type) {
     case "FEATURES":
@@ -208,6 +238,16 @@ function Header({
   context: StorefrontContext;
 }) {
   const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLElement | null>(null);
+  const destination = useRef<string | null>(null);
+  useEffect(
+    () => () => context.registerDialog?.(`menu:${block.id}`, false),
+    [context.registerDialog, block.id],
+  );
+  function setMenuOpen(next: boolean) {
+    context.registerDialog?.(`menu:${block.id}`, next);
+    setOpen(next);
+  }
   const c = block.content;
   return (
     <header className="lp-header">
@@ -216,7 +256,10 @@ function Header({
           type="button"
           className="lp-icon-button lp-menu"
           aria-label="Open navigation"
-          onClick={() => setOpen(true)}
+          onClick={(event) => {
+            opener.current = event.currentTarget;
+            setMenuOpen(true);
+          }}
         >
           ☰
         </button>
@@ -277,8 +320,17 @@ function Header({
           </button>
         )}
       </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+      <Dialog open={open} onOpenChange={setMenuOpen}>
+        <DialogContent
+          className={`${STOREFRONT_PORTAL_CLASS} lp-template-${context.templateId ?? "custom"}`}
+          style={landingThemeStyle(context.theme)}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (destination.current) focusDestination(destination.current, opener.current);
+            else if (opener.current?.isConnected) opener.current.focus();
+            destination.current = null;
+          }}
+        >
           <DialogTitle>{c.brand}</DialogTitle>
           <DialogDescription>Explore this collection</DialogDescription>
           <nav className="lp-drawer-nav" aria-label="Mobile navigation">
@@ -286,7 +338,13 @@ function Header({
               <a
                 key={`${actionHref(a.target)}:${a.label}`}
                 href={actionHref(a.target)}
-                onClick={() => setOpen(false)}
+                onClick={(event) => {
+                  if (a.target.kind === "SECTION") {
+                    event.preventDefault();
+                    destination.current = a.target.sectionId;
+                  }
+                  setMenuOpen(false);
+                }}
               >
                 {a.label}
               </a>
@@ -309,6 +367,31 @@ function Hero({
   const layout = block.appearance?.layout ?? "LEGACY";
   const Heading = context.primaryHero ? "h1" : "h2";
   const { off } = useLandingMotion();
+  const backgroundKey = JSON.stringify(context.background ?? null);
+  const activeBackground = useRef({ key: backgroundKey, revision: 0 });
+  if (activeBackground.current.key !== backgroundKey)
+    activeBackground.current = {
+      key: backgroundKey,
+      revision: activeBackground.current.revision + 1,
+    };
+  const backgroundRevision = activeBackground.current.revision;
+  const initialBackgroundState: LandingBackgroundState =
+    !context.background ||
+    context.background.mode === "COLOR" ||
+    (context.background.mode === "IMAGE" && !context.background.image?.url) ||
+    (context.background.mode === "THREE_D" && !context.background.threeD)
+      ? "fallback"
+      : "loading";
+  const [visual, setVisual] = useState<{ revision: number; state: LandingBackgroundState }>({
+    revision: backgroundRevision,
+    state: initialBackgroundState,
+  });
+  const backgroundState =
+    visual.revision === backgroundRevision ? visual.state : initialBackgroundState;
+  const onVisualStateChange = (state: LandingBackgroundState) => {
+    if (activeBackground.current.revision === backgroundRevision)
+      setVisual({ revision: backgroundRevision, state });
+  };
   const layers = c.layers ?? [];
   const media = c.media ?? (c.mediaUrl ? mediaFromUrl(c.mediaUrl, c.title) : undefined);
   const actions = (
@@ -344,8 +427,15 @@ function Hero({
             />
           ))}
         </section>
-        <div className={`lp-promo lp-promo-${block.appearance?.panelPlacement ?? "OVERLAP"}`}>
-          <LandingBackground settings={context.background} eager={context.primaryHero} />
+        <div
+          className={`lp-promo lp-promo-${block.appearance?.panelPlacement ?? "OVERLAP"} ${backgroundState !== "ready" ? "lp-hero-flat" : ""}`}
+          data-background-state={backgroundState}
+        >
+          <LandingBackground
+            settings={context.background}
+            eager={context.primaryHero}
+            onVisualStateChange={onVisualStateChange}
+          />
           <div className="lp-hero-copy">
             <p className="lp-eyebrow">{c.eyebrow}</p>
             <Heading>{c.title}</Heading>
@@ -357,9 +447,14 @@ function Hero({
     );
   return (
     <div
-      className={`lp-hero lp-hero-${layout.toLowerCase()} ${context.background?.mode === "COLOR" ? "lp-hero-flat" : ""}`}
+      className={`lp-hero lp-hero-${layout.toLowerCase()} ${backgroundState !== "ready" ? "lp-hero-flat" : ""}`}
+      data-background-state={backgroundState}
     >
-      <LandingBackground settings={context.background} eager={context.primaryHero} />
+      <LandingBackground
+        settings={context.background}
+        eager={context.primaryHero}
+        onVisualStateChange={onVisualStateChange}
+      />
       <div className="lp-hero-copy">
         <p className="lp-eyebrow">{c.eyebrow}</p>
         <Heading>{c.title}</Heading>
@@ -513,6 +608,16 @@ function Catalog({
   const [quantity, setQuantity] = useState(1);
   const [shop, setShop] = useState(false);
   const [notice, setNotice] = useState("");
+  const opener = useRef<HTMLElement | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const closeAction = useRef<"restore" | "cart" | "contact">("restore");
+  useEffect(
+    () => () => {
+      opener.current?.removeAttribute("data-lp-detail-opener");
+      context.registerDialog?.(`details:${block.id}`, false);
+    },
+    [context.registerDialog, block.id],
+  );
   const refs =
     block.type === "CATALOG"
       ? block.content.catalogItemRefs.map((r) => `${r.sourceType}:${r.sourceId}`)
@@ -528,10 +633,14 @@ function Catalog({
   );
   const now = useCatalogPricingClock(bound.map((i) => i.discount));
   const categories = [...new Set(bound.map((i) => i.category).filter(Boolean))] as string[];
+  const activeCategory = categories.includes(category) ? category : "";
+  useEffect(() => {
+    if (category && !activeCategory) setCategory("");
+  }, [category, activeCategory]);
   const shown = bound.filter(
     (i) =>
-      (!category || i.category === category) &&
-      `${i.name} ${i.description} ${i.category ?? ""}`
+      (!activeCategory || i.category === activeCategory) &&
+      `${i.name} ${i.description} ${i.category ?? ""} ${i.variants.map((v) => `${v.name} ${v.attributes.map((a) => `${a.name} ${a.value}`).join(" ")}`).join(" ")}`
         .toLocaleLowerCase()
         .includes(query.trim().toLocaleLowerCase()),
   );
@@ -540,90 +649,109 @@ function Catalog({
   const rail =
     appearance?.layout === "RAIL" ||
     (!appearance?.layout && !boutique && block.content.displayMode === "HORIZONTAL");
-  const current = detail ? context.catalogItems.find((i) => i.key === detail.key) : undefined;
+  const current = detail ? bound.find((i) => i.key === detail.key) : undefined;
   const variant = current?.variants.find((v) => v.variantId === variantId);
+  useEffect(() => {
+    if (variantId && !variant?.isAvailable) setVariantId("");
+  }, [variantId, variant?.isAvailable]);
   const enabled = context.goal === "SHOP" && Boolean(context.onAdd);
   const contact = context.sections.find(
     (s) => s.enabled && s.components.some((c) => c.type === "CONTACT" && c.enabled),
   );
-  function open(item: LandingCatalogItem, shopNow = false) {
+  function open(item: LandingCatalogItem, element: HTMLElement, shopNow = false) {
+    opener.current?.removeAttribute("data-lp-detail-opener");
+    opener.current = element;
+    element.setAttribute("data-lp-detail-opener", "");
+    closeAction.current = "restore";
+    setNotice("");
+    context.registerDialog?.(`details:${block.id}`, true);
     setDetail(item);
     setVariantId("");
     setQuantity(1);
     setShop(shopNow);
   }
-  function add(item: LandingCatalogItem, shopNow = false) {
+  function closeDetail() {
+    context.registerDialog?.(`details:${block.id}`, false);
+    setDetail(undefined);
+  }
+  function add(item: LandingCatalogItem, element: HTMLElement, shopNow = false) {
     if (item.variants.length) {
-      open(item, shopNow);
+      open(item, element, shopNow);
       return;
     }
-    context.onAdd?.(item, undefined, 1, shopNow);
-    setNotice(`${item.name} added to cart`);
+    const result = context.onAdd?.(item, undefined, 1, shopNow);
+    if (result) setNotice(addMessage(item, result));
   }
-  const cards = shown.slice(0, limit).map((item) => (
-    <article
-      key={item.key}
-      id={`product-${item.sourceId}`}
-      className={`lp-product ${context.highlightKey === item.key ? "lp-product-highlighted" : ""} ${boutique ? "lp-product-boutique" : ""} ${appearance?.cardLayout === "COMPACT" ? "lp-product-compact" : ""}`}
-    >
-      <div className="lp-product-image">
-        {item.mediaUrls[0] && <AssetImage media={mediaFromUrl(item.mediaUrls[0], item.name)} />}
-      </div>
-      <div className="lp-product-info">
-        <p className="lp-eyebrow">{item.category}</p>
-        <h3>{item.name}</h3>
-        {item.description && !boutique && <p>{item.description}</p>}
-        <CatalogDiscountPrice
-          now={now}
-          liveCountdown
-          from={item.variants.length > 0}
-          pricing={
-            item.variants.length
-              ? {
-                  ...[...item.variants].sort(
-                    (a, b) =>
-                      effectivePrice(a, now, item.discount) - effectivePrice(b, now, item.discount),
-                  )[0]!,
-                  discount: item.discount,
-                }
-              : item
-          }
-        />
-        {!item.isAvailable && <p>Currently unavailable</p>}
-        {enabled && appearance?.showShopNow && (
-          <button
-            type="button"
-            className="lp-action"
-            disabled={!item.isAvailable}
-            onClick={() => add(item, true)}
-          >
-            {appearance.shopLabel ?? "Shop now"}
-          </button>
-        )}
-      </div>
-      <div className="lp-product-actions">
-        {enabled && appearance?.showAddToCart !== false && (
-          <button
-            type="button"
-            className="lp-action"
-            disabled={!item.isAvailable}
-            onClick={() => add(item)}
-          >
-            {item.variants.length ? "Choose options" : (appearance?.addLabel ?? "Add to cart")}
-          </button>
-        )}
-        {appearance?.showQuickView !== false && (
-          <button
-            type="button"
-            className="lp-action lp-action-secondary"
-            onClick={() => open(item)}
-          >
-            {enabled ? (appearance?.quickLabel ?? "Quick view") : "View details"}
-          </button>
-        )}
-      </div>
-    </article>
-  ));
+  const cards = shown.slice(0, limit).map((item) => {
+    const purchasable = item.variants.filter((v) => v.isAvailable);
+    const available = item.isAvailable && (!item.variants.length || purchasable.length > 0);
+    const lowest = [...purchasable].sort(
+      (a, b) => effectivePrice(a, now, item.discount) - effectivePrice(b, now, item.discount),
+    )[0];
+    return (
+      <article
+        key={item.key}
+        id={`product-${item.sourceId}`}
+        className={`lp-product ${context.highlightKey === item.key ? "lp-product-highlighted" : ""} ${boutique ? "lp-product-boutique" : ""} ${appearance?.cardLayout === "COMPACT" ? "lp-product-compact" : ""}`}
+      >
+        <div className="lp-product-image">
+          {item.mediaUrls[0] && <AssetImage media={mediaFromUrl(item.mediaUrls[0], item.name)} />}
+        </div>
+        <div className="lp-product-info">
+          <p className="lp-eyebrow">{item.category}</p>
+          <h3>{item.name}</h3>
+          {item.description && !boutique && <p>{item.description}</p>}
+          {available && (
+            <CatalogDiscountPrice
+              now={now}
+              liveCountdown
+              from={item.variants.length > 0}
+              pricing={
+                lowest
+                  ? {
+                      ...lowest,
+                      discount: item.discount,
+                    }
+                  : item
+              }
+            />
+          )}
+          {!available && <p>Currently unavailable</p>}
+          {enabled && appearance?.showShopNow && (
+            <button
+              type="button"
+              className="lp-action"
+              disabled={!available || context.cartPending}
+              onClick={(event) => add(item, event.currentTarget, true)}
+            >
+              {appearance.shopLabel ?? "Shop now"}
+            </button>
+          )}
+        </div>
+        <div className="lp-product-actions">
+          {enabled && appearance?.showAddToCart !== false && (
+            <button
+              type="button"
+              className="lp-action"
+              disabled={!available || context.cartPending}
+              onClick={(event) => add(item, event.currentTarget)}
+            >
+              {item.variants.length ? "Choose options" : (appearance?.addLabel ?? "Add to cart")}
+            </button>
+          )}
+          {appearance?.showQuickView !== false && (
+            <button
+              type="button"
+              className="lp-action lp-action-secondary"
+              onClick={(event) => open(item, event.currentTarget)}
+            >
+              {enabled ? (appearance?.quickLabel ?? "Quick view") : "View details"}
+            </button>
+          )}
+        </div>
+      </article>
+    );
+  });
   return (
     <div
       className={`lp-catalog ${appearance?.orderPresentation === "INLINE_SUMMARY" && enabled ? "lp-inline-order" : ""}`}
@@ -636,6 +764,7 @@ function Catalog({
         <label className="lp-search">
           Search collection
           <input
+            ref={searchInput}
             data-lp-search
             type="search"
             value={query}
@@ -643,13 +772,26 @@ function Catalog({
             placeholder="Search products"
           />
         </label>
+        {(query || activeCategory) && (
+          <button
+            type="button"
+            className="lp-clear-filters"
+            onClick={() => {
+              setQuery("");
+              setCategory("");
+              setLimit(24);
+            }}
+          >
+            Clear filters
+          </button>
+        )}
         {categories.length > 0 && (
           <nav className="lp-categories" aria-label="Collection categories">
             {["", ...categories].map((c) => (
               <button
                 type="button"
                 key={c}
-                aria-pressed={category === c}
+                aria-pressed={activeCategory === c}
                 onClick={() => setCategory(c)}
               >
                 {c || "All"}
@@ -672,7 +814,15 @@ function Catalog({
               : "No products available right now."}
           </p>
         )}
-        {shown.length > limit && <button type="button" className="lp-action" onClick={() => setLimit((value) => value + 24)}>Load more products ({shown.length - limit} remaining)</button>}
+        {shown.length > limit && (
+          <button
+            type="button"
+            className="lp-action"
+            onClick={() => setLimit((value) => value + 24)}
+          >
+            Load more products ({shown.length - limit} remaining)
+          </button>
+        )}
         <p className="lp-announcement" role="status">
           {notice}
         </p>
@@ -680,8 +830,23 @@ function Catalog({
       {appearance?.orderPresentation === "INLINE_SUMMARY" && enabled && context.inlineOrder && (
         <aside className="lp-order-panel">{context.inlineOrder}</aside>
       )}
-      <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(undefined)}>
-        <DialogContent className="max-w-3xl">
+      <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && closeDetail()}>
+        <DialogContent
+          className={`max-w-3xl ${STOREFRONT_PORTAL_CLASS} lp-template-${context.templateId ?? "custom"}`}
+          style={landingThemeStyle(context.theme)}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const element = opener.current;
+            element?.removeAttribute("data-lp-detail-opener");
+            if (closeAction.current === "contact" && contact) focusDestination(contact.id, element);
+            else if (closeAction.current === "restore") {
+              if (element?.isConnected && !element.matches(":disabled")) element.focus();
+              else searchInput.current?.focus();
+            }
+            opener.current = null;
+            closeAction.current = "restore";
+          }}
+        >
           <DialogTitle>{current?.name ?? "Item unavailable"}</DialogTitle>
           <DialogDescription>
             {current?.description || "Product details and available options."}
@@ -692,11 +857,28 @@ function Catalog({
                 <AssetImage media={mediaFromUrl(current.mediaUrls[0], current.name)} />
               )}
               <div>
-                <CatalogDiscountPrice
-                  now={now}
-                  liveCountdown
-                  pricing={{ ...(variant ?? current), discount: current.discount }}
-                />
+                {current.isAvailable &&
+                (!current.variants.length || current.variants.some((v) => v.isAvailable)) ? (
+                  <CatalogDiscountPrice
+                    now={now}
+                    liveCountdown
+                    from={current.variants.length > 0 && !variant?.isAvailable}
+                    pricing={{
+                      ...(variant?.isAvailable
+                        ? variant
+                        : (current.variants
+                            .filter((v) => v.isAvailable)
+                            .sort(
+                              (a, b) =>
+                                effectivePrice(a, now, current.discount) -
+                                effectivePrice(b, now, current.discount),
+                            )[0] ?? current)),
+                      discount: current.discount,
+                    }}
+                  />
+                ) : (
+                  <p>Currently unavailable</p>
+                )}
                 {current.variants.length > 0 && (
                   <fieldset>
                     <legend>Select an option</legend>
@@ -704,7 +886,7 @@ function Catalog({
                       <button
                         key={v.variantId}
                         type="button"
-                        disabled={!v.isAvailable}
+                        disabled={!current.isAvailable || !v.isAvailable}
                         className="lp-option"
                         aria-pressed={variantId === v.variantId}
                         onClick={() => setVariantId(v.variantId)}
@@ -726,20 +908,28 @@ function Catalog({
                         onChange={(e) => setQuantity(Number(e.target.value))}
                       />
                     </label>
+                    {context.cartPending && (
+                      <p role="status">Your order is being submitted. Please wait.</p>
+                    )}
                     <button
                       type="button"
                       className="lp-action"
                       disabled={
                         !current.isAvailable ||
+                        context.cartPending ||
                         (current.variants.length > 0 && !variant?.isAvailable) ||
                         !Number.isInteger(quantity) ||
                         quantity < 1 ||
                         quantity > 99
                       }
                       onClick={() => {
-                        context.onAdd?.(current, variant, quantity, shop);
-                        setNotice(`${current.name} added to cart`);
-                        setDetail(undefined);
+                        const result = context.onAdd?.(current, variant, quantity, shop);
+                        if (!result) return;
+                        setNotice(addMessage(current, result));
+                        if (result.acceptedQuantity > 0) {
+                          closeAction.current = shop ? "cart" : "restore";
+                          closeDetail();
+                        }
                       }}
                     >
                       {shop ? "Add and review cart" : "Add to cart"}
@@ -747,11 +937,17 @@ function Catalog({
                   </>
                 ) : (
                   contact && (
-                    <StorefrontAction
-                      label="Contact us"
-                      target={{ kind: "SECTION", sectionId: contact.id }}
-                      theme={context.theme}
-                    />
+                    <a
+                      className="lp-action"
+                      href={`#${contact.id}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        closeAction.current = "contact";
+                        closeDetail();
+                      }}
+                    >
+                      Contact us
+                    </a>
                   )
                 )}
               </div>
@@ -759,6 +955,7 @@ function Catalog({
           ) : (
             <p>This product is no longer available.</p>
           )}
+          <p role="status">{notice}</p>
         </DialogContent>
       </Dialog>
     </div>

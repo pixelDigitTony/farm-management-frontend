@@ -1,38 +1,115 @@
-import { type ImgHTMLAttributes, useEffect, useState } from "react";
-import { restoreAccessToken, tokenStore } from "@/api/client";
+import { type ImgHTMLAttributes, useEffect, useRef, useState } from "react";
+import { acquireStoredImage } from "@/lib/landing-page/stored-image-loader";
+
 export const isStoredImage = (url?: string) => /^\/api\/images\/[a-f0-9]{24}$/.test(url ?? "");
-export function StoredImage({ src, alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
-  const [local, setLocal] = useState("");
+
+export function StoredImage({
+  src,
+  alt,
+  loading,
+  onError,
+  onLoad,
+  picture = false,
+  ...props
+}: ImgHTMLAttributes<HTMLImageElement> & { picture?: boolean }) {
+  const image = useRef<HTMLImageElement>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [visibleSrc, setVisibleSrc] = useState<string>();
+  const [result, setResult] = useState<{ src: string; attempt: number; url: string }>();
+  const [failure, setFailure] = useState<{ src?: string; attempt: number }>();
+  const stored = isStoredImage(src);
+  const visible = loading !== "lazy" || visibleSrc === src;
+  const failed = failure !== undefined && failure.src === src && failure.attempt === attempt;
+
   useEffect(() => {
-    if (!src || !isStoredImage(src)) return;
-    const control = new AbortController();
-    let objectUrl = "";
-    setLocal("");
-    const base = import.meta.env.VITE_API_URL ?? "/api";
-    const path = src.replace("/api", "");
-    const load = async () => {
-      let response = await fetch(`${base}/public${path}`, { signal: control.signal });
-      if (!response.ok && tokenStore.get()) {
-        const privateFetch = () =>
-          fetch(`${base}${path}`, {
-            signal: control.signal,
-            headers: { Authorization: `Bearer ${tokenStore.get()}` },
-          });
-        response = await privateFetch();
-        if (response.status === 401 && (await restoreAccessToken()))
-          response = await privateFetch();
-      }
-      if (!response.ok) return;
-      const blob = await response.blob();
-      if (control.signal.aborted) return;
-      objectUrl = URL.createObjectURL(blob);
-      setLocal(objectUrl);
-    };
-    void load().catch(() => {});
+    if (!src || !stored || loading !== "lazy") {
+      return;
+    }
+    const element = image.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      setVisibleSrc(src);
+      return;
+    }
+    let active = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (active && entries.some((entry) => entry.isIntersecting)) {
+          setVisibleSrc(src);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(element);
     return () => {
-      control.abort();
+      active = false;
+      observer.disconnect();
+    };
+  }, [src, stored, loading]);
+
+  useEffect(() => {
+    if (!src || !stored || !visible) return;
+    const request = acquireStoredImage(src);
+    let active = true;
+    let objectUrl = "";
+    void request.promise
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setResult({ src, attempt, url: objectUrl });
+      })
+      .catch(() => {
+        if (!active) return;
+        setFailure({ src, attempt });
+        image.current?.dispatchEvent(new Event("error"));
+      });
+    return () => {
+      active = false;
+      request.release();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [src]);
-  return <img {...props} alt={alt} src={isStoredImage(src) ? local || undefined : src} />;
+  }, [src, stored, visible, attempt]);
+
+  useEffect(() => {
+    if (!failed) return;
+    const retry = () => setAttempt((value) => value + 1);
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [failed]);
+
+  const element = (
+    <img
+      {...props}
+      key={`${src ?? ""}:${attempt}`}
+      ref={image}
+      alt={alt}
+      loading={loading}
+      src={
+        stored
+          ? result && result.src === src && result.attempt === attempt
+            ? result.url
+            : undefined
+          : src
+      }
+      data-image-state={failed ? "error" : undefined}
+      onError={(event) => {
+        setFailure({ src, attempt });
+        onError?.(event);
+      }}
+      onLoad={(event) => {
+        setFailure(undefined);
+        onLoad?.(event);
+      }}
+    />
+  );
+  return (
+    <>
+      {picture ? <picture>{element}</picture> : element}
+      {failed && alt && !image.current?.closest("button, a, [role='button']") && (
+        <button type="button" onClick={() => setAttempt((value) => value + 1)}>
+          Retry image
+        </button>
+      )}
+    </>
+  );
 }
