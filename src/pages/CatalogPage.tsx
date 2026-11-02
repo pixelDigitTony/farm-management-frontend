@@ -6,6 +6,7 @@ import * as v from "valibot";
 import { ApiError, api } from "@/api/client";
 import { CatalogDiscountManager } from "@/components/CatalogDiscountManager";
 import { CatalogDiscountPrice } from "@/components/CatalogDiscountPrice";
+import { CatalogMyDayManager } from "@/components/CatalogMyDayManager";
 import { ImageUpload } from "@/components/ImageUpload";
 import { Header } from "@/components/PageHeader";
 import { ProductAvailabilityEditor } from "@/components/ProductAvailabilityEditor";
@@ -104,6 +105,7 @@ const describeAvailability = (rule: AvailabilitySchedule) =>
   rule.mode === "CUSTOM_DATES" ? [...rule.dates].sort().join(", ") : scheduleSummary(rule);
 
 export function CatalogPage() {
+  const [myDayProduct, setMyDayProduct] = useState<string>();
   const client = useQueryClient();
   const [editing, setEditing] = useState<CatalogProduct>();
   const [draft, setDraft] = useState<ProductDraft>(() => emptyDraft());
@@ -329,6 +331,12 @@ export function CatalogPage() {
         title="Product Catalog"
         description="Create clothing, farm products, merchandise, and other items that can be featured and ordered from your landing page. Food remains managed in Menu."
       >
+        <CatalogMyDayManager
+          products={items}
+          timezone={products.data?.timezone ?? "Asia/Manila"}
+          shortcut={myDayProduct}
+          onShortcutHandled={() => setMyDayProduct(undefined)}
+        />
         <Button permission={{ path: "/catalog/products", method: "POST" }} onClick={startCreate}>
           <Icon icon="solar:add-circle-linear" /> Add product
         </Button>
@@ -561,6 +569,14 @@ export function CatalogPage() {
                             }}
                           >
                             Schedule availability
+                          </Button>
+                          <Button
+                            permission={{ path: "/catalog/my-day", method: "POST" }}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMyDayProduct(product._id)}
+                          >
+                            Schedule in My Day
                           </Button>
                           <Button
                             permission={{ path: "/catalog/products", method: "PUT" }}

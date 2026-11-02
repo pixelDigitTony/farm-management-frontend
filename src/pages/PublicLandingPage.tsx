@@ -10,6 +10,7 @@ import {
   contrastingButtonText,
   LandingPageRenderer,
 } from "@/components/landing-page/LandingPageRenderer";
+import { MyDayDialog } from "@/components/landing-page/MyDayDialog";
 import { StoredImage } from "@/components/StoredImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -23,6 +24,7 @@ import {
   PUBLIC_CART_BAR_CLASS,
   STOREFRONT_PORTAL_CLASS,
 } from "@/lib/landing-page/theme";
+import type { PublicMyDay } from "@/lib/my-day";
 import { formatPeso } from "@/lib/utils";
 import type {
   LandingCatalogItem,
@@ -36,6 +38,8 @@ import type {
 import { defaultLandingPageCommerceSettings, normalizeLandingSections } from "@/types/landing-page";
 
 type PublicLandingPage = {
+  myDay?: PublicMyDay | null;
+  myDayFrequency?: { timezone: string; localDate: string };
   analyticsEnabled?: boolean;
   pageId?: string;
   businessId?: string;
@@ -112,6 +116,7 @@ function restoreStorefrontFocus(opener: HTMLElement | null) {
 }
 
 export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
+  const [myDayOpen, setMyDayOpen] = useState(false);
   const { slug: routeSlug = "" } = useParams();
   const slug = hostnameSlug ?? routeSlug;
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -492,6 +497,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     ) &&
     (page.data?.variant.schemaVersion !== 2 || page.data.variant.goal === "SHOP") &&
     !publicDialogOpen &&
+    !myDayOpen &&
     !choosing &&
     !cartOpen;
   useEffect(() => {
@@ -572,6 +578,19 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
     .filter((s) => s.enabled)
     .flatMap((s) => s.components)
     .find((c) => c.id === commerce.contactBlockId && c.type === "CONTACT" && c.enabled);
+  const myDayContactSection = sections.find(
+    (section) =>
+      section.enabled &&
+      section.components.some(
+        (component) =>
+          component.enabled &&
+          component.type === "CONTACT" &&
+          (component.content.phone ||
+            component.content.email ||
+            component.content.facebookUrl ||
+            component.content.instagramUrl),
+      ),
+  );
   const openCart = () => {
     captureCartOpener();
     setSuccess(undefined);
@@ -761,6 +780,35 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
         </aside>
       )}
       {!cartOpen && refreshWarning}
+      {page.data.pageId &&
+        page.data.businessId &&
+        page.data.serverTime &&
+        page.data.myDayFrequency && (
+          <MyDayDialog
+            key={page.data.pageId}
+            campaign={
+              page.error instanceof ApiError && page.error.status === 404
+                ? null
+                : (page.data.myDay ?? null)
+            }
+            items={page.data.catalogItems ?? []}
+            theme={page.data.variant.theme}
+            businessId={page.data.businessId}
+            pageId={page.data.pageId}
+            frequency={page.data.myDayFrequency}
+            serverTime={page.data.serverTime}
+            receivedAt={page.dataUpdatedAt}
+            fresh={!page.isError && !page.isFetching}
+            blocked={publicDialogOpen || cartOpen || Boolean(choosing) || order.isPending}
+            goal={page.data.variant.goal ?? "SHOP"}
+            orderingEnabled={commerce.orderingEnabled}
+            contactId={myDayContactSection?.id}
+            onAdd={(item) => {
+              handleAdd(item, undefined, 1, true);
+            }}
+            onOpenChange={setMyDayOpen}
+          />
+        )}
       <LandingPageRenderer
         theme={page.data.variant.theme}
         schemaVersion={page.data.variant.schemaVersion}

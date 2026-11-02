@@ -128,7 +128,7 @@ describe("landing builder initial variant selection", () => {
       expect(screen.getByRole("combobox", { name: "Variant" })).toHaveValue("main-variant"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Back to landing pages" }));
-    expect(await screen.findByRole("heading", { name: "Landing pages" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Landing Management" })).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "Landing page" })).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Open editor" }));
     expect(await screen.findByRole("combobox", { name: "Variant" })).toHaveValue("live-variant");
@@ -169,7 +169,7 @@ describe("landing builder initial variant selection", () => {
     expect(JSON.parse(request.mock.calls[0]?.[1]?.body as string).sections[0].name).toBe(
       "Updated section",
     );
-    expect(screen.queryByRole("heading", { name: "Landing pages" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Landing Management" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to landing pages" })).toBeDisabled();
     await act(async () => {
       finishSave({
@@ -178,6 +178,6 @@ describe("landing builder initial variant selection", () => {
         revision: 2,
       });
     });
-    expect(await screen.findByRole("heading", { name: "Landing pages" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Landing Management" })).toBeVisible();
   });
 });
