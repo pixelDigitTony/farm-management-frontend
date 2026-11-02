@@ -130,7 +130,7 @@ try {
     const previousReads = historyReads;
     healthy = true;
     await page.getByRole("button", { name: "Refresh messages", exact: true }).click();
-    await page.getByText("Customer replies are connected.", { exact: true }).waitFor();
+    await page.getByText(/Customer replies are not connected yet/).waitFor({ state: "hidden" });
     assert(historyReads > previousReads);
     assert(await page.getByRole("textbox", { name: "Email message" }).isEnabled());
     assert.deepEqual(errors, []);

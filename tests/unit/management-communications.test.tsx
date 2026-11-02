@@ -132,7 +132,7 @@ it("shows persisted email messages and sends the composer through the email API"
   });
   mount(<OrderEmailInbox visible initialOrderId="order-a" onViewOrder={() => {}} />);
   expect(await screen.findByText("Can I collect tomorrow?")).toBeVisible();
-  expect(await screen.findByText("Customer replies are connected.")).toBeVisible();
+  expect(screen.queryByText("Customer replies are connected.")).not.toBeInTheDocument();
   vi.mocked(api).mockClear();
   await user.click(screen.getByRole("button", { name: "Refresh messages" }));
   await waitFor(() =>

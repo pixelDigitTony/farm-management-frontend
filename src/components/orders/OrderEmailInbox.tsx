@@ -254,19 +254,14 @@ export function OrderEmailInbox({
           retry={() => void health.refetch()}
         />
       )}
-      {health.data && (
-        <div
-          role="status"
-          className={`rounded-xl border p-4 text-sm ${health.data.status === "HEALTHY" ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}
-        >
+      {health.data && health.data.status !== "HEALTHY" && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
           <p>
             {health.data.status === "INCOMPLETE"
               ? "Customer replies are not connected yet. Ask an administrator to complete email receiving setup."
               : health.data.status === "DEGRADED"
                 ? "Some customer replies are delayed or need restricted review. Saved messages remain available."
-                : health.data.status === "HEALTHY"
-                  ? "Customer replies are connected."
-                  : "Email receiving has not been verified yet. Saved messages remain available."}
+                : "Email receiving has not been verified yet. Saved messages remain available."}
           </p>
           {(health.data.pending > 0 || health.data.failed > 0 || health.data.review > 0) && (
             <p className="mt-1">
