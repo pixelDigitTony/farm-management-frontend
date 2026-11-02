@@ -516,10 +516,6 @@
   font-size: clamp(1.2rem, 1.7vw, 1.8rem);
   margin: 0;
 }
-.lp-product-boutique .lp-product-info > .lp-action {
-  width: 100%;
-  margin-top: auto;
-}
 .lp-product-boutique .lp-product-actions {
   grid-column: span 2;
   padding: 0;
@@ -1504,18 +1500,6 @@
   color: var(--lp-ink);
   padding: 12px;
   border-radius: 8px;
-}
-.lp-product-boutique .lp-product-actions .lp-action + .lp-action:not(.lp-action-secondary) {
-  background: transparent;
-  color: var(--lp-ink);
-  border-color: var(--lp-ink);
-}
-.lp-product-boutique:has(.lp-product-info > .lp-action)
-  .lp-product-actions
-  .lp-action:not(.lp-action-secondary) {
-  background: transparent;
-  color: var(--lp-ink);
-  border-color: var(--lp-ink);
 }
 .lp-storefront .lp-order-panel button,
 .lp-storefront .lp-checkout-form button,

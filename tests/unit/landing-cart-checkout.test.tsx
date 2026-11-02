@@ -381,7 +381,7 @@ describe("public cart and checkout", () => {
       try {
         render(<LandingPreviewPage />);
         send(payload);
-        const opener = await screen.findByRole("button", { name: "Shop now" });
+        const opener = await screen.findByRole("button", { name: "Add to cart" });
         opener.focus();
         fireEvent.click(opener);
         expect(within(screen.getByRole("dialog")).getByText("Apples × 1")).toBeInTheDocument();

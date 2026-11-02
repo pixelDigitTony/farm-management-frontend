@@ -655,6 +655,8 @@ function Catalog({
     if (variantId && !variant?.isAvailable) setVariantId("");
   }, [variantId, variant?.isAvailable]);
   const enabled = context.goal === "SHOP" && Boolean(context.onAdd);
+  const showPurchaseAction =
+    enabled && (appearance?.showAddToCart !== false || appearance?.showShopNow === true);
   const contact = context.sections.find(
     (s) => s.enabled && s.components.some((c) => c.type === "CONTACT" && c.enabled),
   );
@@ -717,37 +719,26 @@ function Catalog({
             />
           )}
           {!available && <p>Currently unavailable</p>}
-          {enabled && appearance?.showShopNow && (
-            <button
-              type="button"
-              className="lp-action"
-              disabled={!available || context.cartPending}
-              onClick={(event) => add(item, event.currentTarget, true)}
-            >
-              {appearance.shopLabel ?? "Shop now"}
-            </button>
-          )}
         </div>
         <div className="lp-product-actions">
-          {enabled && appearance?.showAddToCart !== false && (
+          {showPurchaseAction ? (
             <button
               type="button"
               className="lp-action"
               disabled={!available || context.cartPending}
-              onClick={(event) => add(item, event.currentTarget)}
+              onClick={(event) => add(item, event.currentTarget, appearance?.showShopNow === true)}
             >
               {item.variants.length ? "Choose options" : (appearance?.addLabel ?? "Add to cart")}
             </button>
-          )}
-          {appearance?.showQuickView !== false && (
+          ) : appearance?.showQuickView !== false ? (
             <button
               type="button"
               className="lp-action lp-action-secondary"
               onClick={(event) => open(item, event.currentTarget)}
             >
-              {enabled ? (appearance?.quickLabel ?? "Quick view") : "View details"}
+              View details
             </button>
-          )}
+          ) : null}
         </div>
       </article>
     );

@@ -983,35 +983,50 @@ export function BlockInspector({
                       })
                     }
                   />
-                  {(["showQuickView", "showShopNow", "showAddToCart"] as const).map((key) => (
-                    <label key={key} className="lb-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={block.appearance?.[key] ?? key !== "showShopNow"}
-                        onChange={(e) =>
-                          onChange({
-                            ...block,
-                            appearance: { ...block.appearance, [key]: e.target.checked },
-                          })
-                        }
-                      />
-                      {fieldName(key)}
-                    </label>
-                  ))}
-                  {(["quickLabel", "shopLabel", "addLabel"] as const).map((key) => (
-                    <InspectorField key={key} label={fieldName(key)}>
-                      <input
-                        value={block.appearance?.[key] ?? ""}
-                        maxLength={40}
-                        onChange={(e) =>
-                          onChange({
-                            ...block,
-                            appearance: { ...block.appearance, [key]: e.target.value || undefined },
-                          })
-                        }
-                      />
-                    </InspectorField>
-                  ))}
+                  <label className="lb-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={
+                        draft.goal === "SHOP"
+                          ? block.appearance?.showAddToCart !== false ||
+                            block.appearance?.showShopNow === true ||
+                            block.appearance?.showQuickView !== false
+                          : block.appearance?.showQuickView !== false
+                      }
+                      onChange={(e) =>
+                        onChange({
+                          ...block,
+                          appearance: {
+                            ...block.appearance,
+                            showAddToCart: e.target.checked,
+                            showQuickView: e.target.checked,
+                            showShopNow: false,
+                          },
+                        })
+                      }
+                    />
+                    Show product button
+                  </label>
+                  <InspectorField label="Add to cart label">
+                    <input
+                      value={block.appearance?.addLabel ?? ""}
+                      placeholder="Add to cart"
+                      maxLength={40}
+                      onChange={(e) =>
+                        onChange({
+                          ...block,
+                          appearance: {
+                            ...block.appearance,
+                            addLabel: e.target.value || undefined,
+                          },
+                        })
+                      }
+                    />
+                  </InspectorField>
+                  <p className="lb-help">
+                    Products with options use “Choose options”. Catalog and inquiry pages use “View
+                    details”.
+                  </p>
                 </>
               )}
               {block.type === "SHOWCASE" && (

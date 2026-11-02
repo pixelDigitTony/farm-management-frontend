@@ -82,6 +82,49 @@ const base: StorefrontContext = {
 };
 
 describe("mobile storefront interactions", () => {
+  it.each(["STANDARD", "COMPACT", "BOUTIQUE"] as const)(
+    "shows one clear product action in %s cards, even with all legacy buttons enabled",
+    (cardLayout) => {
+      render(
+        <StorefrontBlock
+          block={{
+            ...catalog,
+            appearance: { cardLayout, showShopNow: true, showAddToCart: true, showQuickView: true },
+          }}
+          context={{ ...base, onAdd: vi.fn() }}
+        />,
+      );
+      for (const [name, action] of [
+        ["Basket", "Choose options"],
+        ["Jar", "Add to cart"],
+      ]) {
+        const card = screen.getByRole("heading", { name }).closest("article");
+        if (!card) throw new Error("Expected product card");
+        expect(within(card).getAllByRole("button")).toHaveLength(1);
+        expect(within(card).getByRole("button", { name: action })).toBeEnabled();
+      }
+      expect(screen.queryByRole("button", { name: "Shop now" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Quick view" })).not.toBeInTheDocument();
+    },
+  );
+  it.each(["CATALOG", "INQUIRY"] as const)(
+    "keeps one read-only details action for %s pages",
+    (goal) => {
+      render(
+        <StorefrontBlock
+          block={{
+            ...catalog,
+            appearance: { showShopNow: true, showAddToCart: true, showQuickView: true },
+          }}
+          context={{ ...base, goal, onAdd: vi.fn() }}
+        />,
+      );
+      for (const card of screen.getAllByRole("article")) {
+        expect(within(card).getAllByRole("button")).toHaveLength(1);
+        expect(within(card).getByRole("button", { name: "View details" })).toBeEnabled();
+      }
+    },
+  );
   it("searches variant attributes, clears both filters, reconciles removed categories, and prices only available variants", () => {
     const view = render(<StorefrontBlock block={catalog} context={base} />);
     const basket = screen.getByRole("heading", { name: "Basket" }).closest("article");
@@ -122,7 +165,7 @@ describe("mobile storefront interactions", () => {
         context={{ ...base, catalogItems: [item], onAdd: vi.fn() }}
       />,
     );
-    const opener = screen.getByRole("button", { name: "Quick view" });
+    const opener = screen.getByRole("button", { name: "Choose options" });
     opener.focus();
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog");
@@ -155,7 +198,7 @@ describe("mobile storefront interactions", () => {
       .mockReturnValueOnce({ acceptedQuantity: 0, rejectionReason: "QUANTITY_LIMIT" })
       .mockReturnValueOnce({ acceptedQuantity: 2, rejectionReason: "QUANTITY_LIMIT" });
     render(<StorefrontBlock block={catalog} context={{ ...base, catalogItems: [item], onAdd }} />);
-    const opener = screen.getByRole("button", { name: "Quick view" });
+    const opener = screen.getByRole("button", { name: "Choose options" });
     opener.focus();
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog");
@@ -191,12 +234,19 @@ describe("mobile storefront interactions", () => {
     view.rerender(
       <StorefrontBlock
         block={catalog}
+        context={{ ...base, catalogItems: [item], onAdd: vi.fn() }}
+      />,
+    );
+    const purchaseOpener = screen.getByRole("button", { name: "Choose options" });
+    fireEvent.click(purchaseOpener);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Standard/ }));
+    view.rerender(
+      <StorefrontBlock
+        block={catalog}
         context={{ ...base, catalogItems: [item], cartPending: true, onAdd: vi.fn() }}
       />,
     );
-    expect(screen.getByRole("button", { name: "Choose options" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Quick view" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Standard/ }));
+    expect(purchaseOpener).toBeDisabled();
     expect(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Add to cart" }),
     ).toBeDisabled();
@@ -222,7 +272,7 @@ describe("mobile storefront interactions", () => {
     expect(onPublicDialogChange.mock.calls).toEqual([[true], [false]]);
   });
 
-  it("transfers an accepted shop-now detail to a cart without refocusing the inert opener", async () => {
+  it("transfers an accepted product selection to a cart without refocusing the inert opener", async () => {
     const shopCatalog = { ...catalog, appearance: { ...catalog.appearance, showShopNow: true } };
     const captured: Array<Element | null> = [];
     function Host() {
@@ -263,7 +313,7 @@ describe("mobile storefront interactions", () => {
       );
     }
     render(<Host />);
-    const opener = screen.getByRole("button", { name: "Shop now" });
+    const opener = screen.getByRole("button", { name: "Choose options" });
     opener.focus();
     fireEvent.click(opener);
     const details = screen.getByRole("dialog", { name: "Basket" });

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { safeParse } from "valibot";
@@ -67,6 +68,58 @@ const context: StorefrontContext = {
   catalogItems: [product],
 };
 describe("V2 storefront actions and editing", () => {
+  it("offers one editor toggle that can hide or restore the product button", () => {
+    let saved = createLandingComponent("CATALOG");
+    saved.appearance = { showShopNow: true, showQuickView: true, showAddToCart: true };
+    const draft = {
+      _id: "draft",
+      name: "Draft",
+      schemaVersion: 2,
+      goal: "SHOP",
+      theme,
+      commerce: defaultLandingPageCommerceSettings,
+      sections: [contact],
+    } as LandingPageVariant;
+    function Editor() {
+      const [block, setBlock] = useState(saved);
+      return (
+        <BlockInspector
+          block={block}
+          draft={draft}
+          catalog={[product]}
+          onChange={(next) => {
+            saved = next;
+            setBlock(next);
+          }}
+        />
+      );
+    }
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { enabled: false } } })}
+      >
+        <Editor />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    const toggle = screen.getByRole("checkbox", { name: "Show product button" });
+    expect(toggle).toBeChecked();
+    expect(
+      screen.queryByRole("checkbox", { name: /Show shop now|Show quick view/i }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(saved.appearance).toMatchObject({
+      showAddToCart: false,
+      showQuickView: false,
+      showShopNow: false,
+    });
+    fireEvent.click(toggle);
+    expect(saved.appearance).toMatchObject({
+      showAddToCart: true,
+      showQuickView: true,
+      showShopNow: false,
+    });
+  });
   it("preserves legacy rendering unless a document explicitly opts into V2", () => {
     const hero = createLandingComponent("HERO");
     if (hero.type !== "HERO") throw new Error("Expected the legacy hero fixture");
@@ -86,11 +139,11 @@ describe("V2 storefront actions and editing", () => {
       view.unmount();
     }
   });
-  it("opens Quick View without mutating a cart, requires an available variant and bounded quantity, then adds the selected line", () => {
+  it("opens product options without mutating a cart, requires an available variant and bounded quantity, then adds the selected line", () => {
     const onAdd = vi.fn();
     const block = createLandingComponent("CATALOG");
     render(<StorefrontBlock block={block} context={{ ...context, onAdd }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Quick view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose options" }));
     expect(onAdd).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("button", { name: "Add to cart" })).toBeDisabled();
