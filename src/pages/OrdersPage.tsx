@@ -103,14 +103,16 @@ export function OrdersPage() {
         title="Customer Orders"
         description="Review orders submitted from your public landing page, starting with pending requests."
       >
-        <Button
-          variant="outline"
-          onClick={() => void orders.refetch()}
-          disabled={orders.isFetching}
-        >
-          <Icon icon="solar:refresh-linear" className={orders.isFetching ? "animate-spin" : ""} />{" "}
-          Refresh
-        </Button>
+        {view === "orders" && (
+          <Button
+            variant="outline"
+            onClick={() => void orders.refetch()}
+            disabled={orders.isFetching}
+          >
+            <Icon icon="solar:refresh-linear" className={orders.isFetching ? "animate-spin" : ""} />{" "}
+            Refresh
+          </Button>
+        )}
       </Header>
       <div role="tablist" aria-label="Customer order views" className="flex gap-2">
         <Button
