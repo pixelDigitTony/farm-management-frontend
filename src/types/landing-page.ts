@@ -80,6 +80,17 @@ export type LandingTemplate = {
 };
 
 export type LandingPageRecord = {
+  publicAccess?: {
+    mode: "INACTIVE" | "IMMEDIATE" | "SCHEDULED" | "LIMITED";
+    startsAt: string | null;
+    endsAt: string | null;
+    timezone: string;
+  };
+  accessStatus?: string;
+  isAccessible?: boolean;
+  timezone?: string;
+  nextTransitionAt?: string | null;
+  serverTime?: string;
   hasUnpublishedChanges?: boolean;
   name?: string;
   revision?: number;

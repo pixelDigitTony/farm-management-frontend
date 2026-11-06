@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ImageUpload } from "@/components/ImageUpload";
+import { StoredImage } from "@/components/StoredImage";
 import pack from "@/lib/landing-page/assets.json";
 import { blockRegistry } from "@/lib/landing-page/registry";
 import type {
@@ -135,7 +136,7 @@ export function MediaField({
   return (
     <fieldset className="lb-media-field">
       <legend>{label}</legend>
-      {media && <img src={media.url} alt={media.alt} />}
+      {media && <StoredImage placeholder="skeleton" src={media.url} alt={media.alt} />}
       <ImageUpload scope="landing-page" selection={media?.url ?? ""} onReady={ready} />
       <InspectorField label={`${label} URL`}>
         <input
@@ -286,7 +287,8 @@ export function BackgroundInspector({
             </select>
           </InspectorField>
           {selected && (
-            <img
+            <StoredImage
+              placeholder="skeleton"
               className="lb-scene-poster"
               src={selected.poster}
               alt="Selected background preview"
@@ -803,7 +805,9 @@ export function BlockInspector({
   draft,
   catalog,
   onChange,
+  mobile = false,
 }: {
+  mobile?: boolean;
   block: LandingPageComponent;
   draft: LandingPageVariant;
   catalog: LandingCatalogItem[];
@@ -850,7 +854,7 @@ export function BlockInspector({
             aria-selected={t === tab}
             onClick={() => setTab(t)}
           >
-            {t}
+            {mobile && t === "Style" ? "Appearance" : mobile && t === "Motion" ? "Advanced" : t}
           </button>
         ))}
       </div>
@@ -864,6 +868,26 @@ export function BlockInspector({
               onChange={onChange}
             />
           )}
+          <label className="lb-checkbox">
+            <input
+              type="checkbox"
+              checked={block.enabled}
+              onChange={(event) => onChange({ ...block, enabled: event.target.checked })}
+            />
+            Show block
+          </label>
+          {!draft.sections.find((section) =>
+            section.components.some((item) => item.id === block.id),
+          )?.enabled && (
+            <p role="status">
+              This block is inside a hidden section. Show its section from Sections to make it
+              visible.
+            </p>
+          )}
+          {block.type === "TESTIMONIALS" &&
+            !block.content.entries.some((entry) => entry.enabled) && (
+              <p>All entries are hidden or empty. Enable a complete entry to show testimonials.</p>
+            )}
           <StructuredFields value={content} ctx={ctx} onChange={changeContent} />
         </>
       )}

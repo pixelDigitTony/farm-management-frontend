@@ -19,6 +19,7 @@
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "landing:sync": "node scripts/sync-landing-contract.mjs",
     "test:landing-browser": "node scripts/verify-landing-v2.mjs",
+    "test:landing-access-mobile": "node scripts/verify-landing-access-mobile.mjs",
     "test:landing-backgrounds": "node scripts/verify-landing-backgrounds.mjs",
     "test:landing-budgets": "node scripts/verify-landing-budgets.mjs",
     "build:test": "VITE_API_URL=/api vite build"

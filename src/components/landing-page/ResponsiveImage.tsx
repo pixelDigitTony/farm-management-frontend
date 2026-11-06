@@ -32,6 +32,7 @@ export function ResponsiveImage({
     <StoredImage
       {...props}
       picture
+      placeholder="skeleton"
       key={selected}
       src={selected}
       srcSet={(mobile && mobileSrc) || isStoredImage(selected) ? undefined : srcSet}

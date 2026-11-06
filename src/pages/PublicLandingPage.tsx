@@ -45,6 +45,7 @@ type PublicLandingPage = {
   businessId?: string;
   nextTransitionAt?: string | null;
   serverTime?: string;
+  publicAccessEndsAt?: string | null;
   slug: string;
   siteTitle: string;
   seoDescription: string;
@@ -116,6 +117,7 @@ function restoreStorefrontFocus(opener: HTMLElement | null) {
 }
 
 export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
+  const [accessExpired, setAccessExpired] = useState(false);
   const [myDayOpen, setMyDayOpen] = useState(false);
   const { slug: routeSlug = "" } = useParams();
   const slug = hostnameSlug ?? routeSlug;
@@ -175,6 +177,26 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
   const cartPage = useRef(page.data);
   cartPage.current = page.data;
   const hasPageData = Boolean(page.data);
+  useEffect(() => {
+    setAccessExpired(false);
+    if (!page.data?.publicAccessEndsAt) return;
+    const remaining =
+      Date.parse(page.data.publicAccessEndsAt) -
+      Date.parse(page.data.serverTime ?? new Date().toISOString()) -
+      Math.max(0, Date.now() - page.dataUpdatedAt);
+    const deadline = Date.now() + remaining;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      const delay = deadline - Date.now();
+      if (delay > 0) timer = setTimeout(check, Math.min(2147483647, delay));
+      else {
+        setAccessExpired(true);
+        void page.refetch();
+      }
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, [page.data?.publicAccessEndsAt, page.data?.serverTime, page.dataUpdatedAt, page.refetch]);
   useEffect(() => {
     if (!page.data?.nextTransitionAt) return;
     const delay =
@@ -523,12 +545,12 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
         <PageSkeleton cards={4} />
       </div>
     );
-  if (!page.data && page.error instanceof ApiError && page.error.status === 404)
+  if (accessExpired || (page.error instanceof ApiError && page.error.status === 404))
     return (
       <main className="grid min-h-screen place-items-center bg-blush-50 p-6 text-center">
         <div>
           <p className="font-display text-5xl font-bold text-pink-700">404</p>
-          <h1 className="mt-3 text-2xl font-bold">This page is not published</h1>
+          <h1 className="mt-3 text-2xl font-bold">This page is currently unavailable</h1>
           <p className="mt-2 text-sm text-stone-500">
             Check the link or ask the business owner for the current address.
           </p>
@@ -1012,6 +1034,7 @@ export function PublicLandingPage({ slug: hostnameSlug }: { slug?: string }) {
                   <div key={line.key} className="lp-cart-line border-b pb-4">
                     {line.mediaUrl ? (
                       <StoredImage
+                        placeholder="skeleton"
                         src={line.mediaUrl}
                         alt={line.name}
                         className="lp-cart-line__image size-16 rounded-xl object-cover"

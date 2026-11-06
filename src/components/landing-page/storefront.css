@@ -229,7 +229,7 @@
   display: grid;
   align-items: center;
 }
-.lp-hero-media > img {
+.lp-hero-media > :is(img, .landing-media) {
   max-height: 520px;
   border-radius: 4px;
 }
@@ -252,7 +252,7 @@
 .lp-hero-poster h1 {
   color: var(--lp-primary);
 }
-.lp-hero-collage .lp-hero-media > img {
+.lp-hero-collage .lp-hero-media > :is(img, .landing-media) {
   width: 75%;
   height: 480px;
   transform: rotate(-4deg);
@@ -551,7 +551,7 @@
   min-width: 0;
   scroll-snap-align: start;
 }
-.lp-rail > img {
+.lp-rail > :is(img, .landing-media) {
   height: 300px;
   object-fit: cover;
 }
@@ -951,10 +951,10 @@
   .lp-hero-media {
     min-height: 300px;
   }
-  .lp-hero-media > img {
+  .lp-hero-media > :is(img, .landing-media) {
     max-height: 400px;
   }
-  .lp-hero-collage .lp-hero-media > img {
+  .lp-hero-collage .lp-hero-media > :is(img, .landing-media) {
     width: 75%;
     height: 350px;
     margin-left: 8px;

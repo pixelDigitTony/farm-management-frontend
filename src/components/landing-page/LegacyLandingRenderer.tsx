@@ -89,6 +89,7 @@ function Media({ url, title, className = "" }: { url: string; title: string; cla
     );
   return (
     <StoredImage
+      placeholder="skeleton"
       src={url}
       alt={title}
       className={`h-full w-full object-cover ${className}`}

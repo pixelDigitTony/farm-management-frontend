@@ -81,7 +81,10 @@ function setup(overrides: { isPublished?: boolean; publishedVariantId?: string }
 }
 
 describe("landing builder initial variant selection", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("opens the published variant even when Main is first in the list", () => {
     setup();
@@ -179,5 +182,29 @@ describe("landing builder initial variant selection", () => {
       });
     });
     expect(await screen.findByRole("heading", { name: "Landing Management" })).toBeVisible();
+  });
+});
+
+describe("canvas-first mobile editor", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  it("opens focused panels, keeps selection, and reaches publishing through More", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    setup();
+    expect(screen.getByRole("navigation", { name: "Editor tools" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sections" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Sections");
+    fireEvent.click(screen.getByRole("button", { name: /Back to canvas/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publishing" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Publishing");
+    expect(screen.getByRole("switch", { name: "Public access" })).toBeInTheDocument();
   });
 });

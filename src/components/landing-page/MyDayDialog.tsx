@@ -66,7 +66,12 @@ export function MyDayStory({
   return (
     <div className="space-y-4 break-words" style={landingThemeStyle(theme)}>
       <div className="aspect-[4/3] max-h-[38dvh] overflow-hidden rounded-xl bg-stone-100">
-        <StoredImage src={item.mediaUrls[0]} alt={item.name} className="size-full object-contain" />
+        <StoredImage
+          placeholder="skeleton"
+          src={item.mediaUrls[0]}
+          alt={item.name}
+          className="size-full object-contain"
+        />
       </div>
       <div aria-live="polite" aria-atomic="true" className="space-y-2">
         <p className="text-sm">
@@ -348,6 +353,7 @@ export function MyDayDialog(props: Omit<Props, "campaign"> & { campaign: PublicM
           {detail && (
             <div className="mt-4 space-y-4">
               <StoredImage
+                placeholder="skeleton"
                 src={detail.mediaUrls[0]}
                 alt={detail.name}
                 className="max-h-[35dvh] w-full rounded-xl object-contain"

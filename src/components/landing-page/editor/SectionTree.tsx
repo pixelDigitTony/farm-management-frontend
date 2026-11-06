@@ -67,33 +67,39 @@ function Row({
       <div className="lb-tree-actions">
         <button
           type="button"
-          aria-label={`Move ${label} up`}
-          disabled={!canUp}
-          onClick={() => onMove(-1)}
-        >
-          ↑
-        </button>
-        <button
-          type="button"
-          aria-label={`Move ${label} down`}
-          disabled={!canDown}
-          onClick={() => onMove(1)}
-        >
-          ↓
-        </button>
-        <button
-          type="button"
           aria-label={`${hidden ? "Show" : "Hide"} ${label}`}
           onClick={onToggle}
         >
           <Icon icon={hidden ? "solar:eye-closed-linear" : "solar:eye-linear"} />
         </button>
-        <button type="button" aria-label={`Duplicate ${label}`} onClick={onDuplicate}>
-          <Icon icon="solar:copy-linear" />
-        </button>
-        <button type="button" aria-label={`Delete ${label}`} onClick={onDelete}>
-          <Icon icon="solar:trash-bin-trash-linear" />
-        </button>
+        <details className="lb-tree-more">
+          <summary aria-label={`More actions for ${label}`}>•••</summary>
+          <div className="lb-tree-menu">
+            {" "}
+            <button
+              type="button"
+              aria-label={`Move ${label} up`}
+              disabled={!canUp}
+              onClick={() => onMove(-1)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              aria-label={`Move ${label} down`}
+              disabled={!canDown}
+              onClick={() => onMove(1)}
+            >
+              ↓
+            </button>
+            <button type="button" aria-label={`Duplicate ${label}`} onClick={onDuplicate}>
+              <Icon icon="solar:copy-linear" />
+            </button>
+            <button type="button" aria-label={`Delete ${label}`} onClick={onDelete}>
+              <Icon icon="solar:trash-bin-trash-linear" />
+            </button>
+          </div>
+        </details>
       </div>
     </div>
   );

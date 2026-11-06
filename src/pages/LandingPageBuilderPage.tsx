@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import * as v from "valibot";
-import { api, sessionUserStore } from "@/api/client";
+import { ApiError, api, sessionUserStore } from "@/api/client";
 import {
   BackgroundInspector,
   BlockInspector,
@@ -14,12 +14,15 @@ import {
   InspectorSelect,
 } from "@/components/landing-page/editor/Inspector";
 import { LandingWorkspaceControls } from "@/components/landing-page/editor/LandingWorkspaceControls";
+import { MobileEditorPanel } from "@/components/landing-page/editor/MobileEditorPanel";
 import { PreviewFrame } from "@/components/landing-page/editor/PreviewFrame";
+import { PublicAccessControl } from "@/components/landing-page/editor/PublicAccessControl";
 import { SectionTree } from "@/components/landing-page/editor/SectionTree";
 import { SubdomainField } from "@/components/landing-page/editor/SubdomainField";
 import { LandingIcon as Icon } from "@/components/landing-page/LandingIcon";
 import { LandingStatisticsDialog } from "@/components/landing-page/LandingStatisticsDialog";
 import { QueryError } from "@/components/QueryError";
+import { StoredImage } from "@/components/StoredImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -27,6 +30,7 @@ import { useDraftAutosave } from "@/hooks/useDraftAutosave";
 import { blockRegistry } from "@/lib/landing-page/registry";
 import { landingPageVariantUpdateSchema } from "@/lib/landing-page/schema";
 import { reconcileSectionLinks } from "@/lib/landing-page/section-links";
+import { landingValidationMessage } from "@/lib/landing-page/validation-message";
 import { canAccess } from "@/lib/permissions";
 import { getPublicSiteUrl } from "@/lib/public-site";
 import {
@@ -80,13 +84,65 @@ export function LandingPageBuilderPage() {
   latest.current = draft;
   const [sectionId, setSectionId] = useState<string>();
   const [blockId, setBlockId] = useState<string>();
+  const [sectionTab, setSectionTab] = useState("Content");
   const [leftTab, setLeftTab] = useState<"Sections" | "Add" | "Templates">("Sections");
   const [inspector, setInspector] = useState<"Selection" | "Theme" | "Commerce">("Selection");
+  const [mobile, setMobile] = useState(
+    () => window.matchMedia?.("(max-width:767px)").matches ?? false,
+  );
+  const [mobilePanel, setMobilePanel] = useState("");
+  const [mobileWidth, setMobileWidth] = useState(() => Math.max(280, window.innerWidth - 24));
+  const [previewFit, setPreviewFit] = useState(true);
   const [width, setWidth] = useState(1440);
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width:767px)");
+    if (!media) return;
+    const resize = () => {
+      setMobile(media.matches);
+      setMobileWidth(Math.max(280, window.innerWidth - 24));
+    };
+    const breakpoint = () => {
+      resize();
+      setLeftOpen(false);
+      setRightOpen(false);
+      setMobilePanel("");
+    };
+    media.addEventListener("change", breakpoint);
+    window.addEventListener("resize", resize);
+    return () => {
+      media.removeEventListener("change", breakpoint);
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
   const [preview, setPreview] = useState(false);
   const [motionOff, setMotionOff] = useState(false);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const mobileOverlayOpen = mobile && (leftOpen || rightOpen || Boolean(mobilePanel));
+  useEffect(() => {
+    if (!mobileOverlayOpen) return;
+    const marker = crypto.randomUUID();
+    window.history.pushState({ ...window.history.state, landingMobilePanel: marker }, "");
+    const back = () => {
+      const dialogs = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')];
+      const menu = dialogs.at(-1)?.querySelector<HTMLDetailsElement>("details[open]");
+      if (menu || dialogs.length > 1) {
+        if (menu) menu.open = false;
+        else
+          dialogs.at(-1)?.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')?.click();
+        window.history.pushState({ ...window.history.state, landingMobilePanel: marker }, "");
+        return;
+      }
+      setLeftOpen(false);
+      setRightOpen(false);
+      setMobilePanel("");
+    };
+    window.addEventListener("popstate", back);
+    return () => {
+      window.removeEventListener("popstate", back);
+      if (window.history.state?.landingMobilePanel === marker) window.history.back();
+    };
+  }, [mobileOverlayOpen]);
   useEffect(() => {
     const closePanel = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || document.querySelector('[role="dialog"]')) return;
@@ -118,15 +174,39 @@ export function LandingPageBuilderPage() {
   const pageList = useQuery({
     queryKey: ["landing-pages"],
     queryFn: () => api<{ items: LandingPageRecord[] }>("/landing-page/pages"),
+    refetchInterval: 30_000,
   });
   const builder = useQuery({
     queryKey: builderKey,
     enabled: Boolean(pageId),
+    refetchInterval: 30_000,
     queryFn: async () => {
       const data = await api<Payload>(pageId ? `/landing-page/pages/${pageId}` : "/landing-page");
       return { ...data, variants: data.variants.map(normalizeLandingPageVariant) };
     },
   });
+  useEffect(() => {
+    const records = [
+      ...(pageList.data?.items ?? []),
+      ...(builder.data?.page ? [builder.data.page] : []),
+    ];
+    const delays = records
+      .filter((record) => record.nextTransitionAt)
+      .map(
+        (record) =>
+          Date.parse(record.nextTransitionAt!) -
+          Date.parse(record.serverTime ?? new Date().toISOString()),
+      );
+    if (!delays.length) return;
+    const timer = setTimeout(
+      () => {
+        void queryClient.invalidateQueries({ queryKey: ["landing-pages"] });
+        void queryClient.invalidateQueries({ queryKey: ["landing-page-builder"] });
+      },
+      Math.min(2147483647, Math.max(50, Math.min(...delays) + 100)),
+    );
+    return () => clearTimeout(timer);
+  }, [pageList.data, builder.data?.page, queryClient]);
   const pagePath = `/landing-page/pages/${builder.data?.page?._id ?? pageId}`;
   const templates = useQuery({
     queryKey: ["landing-page-templates"],
@@ -135,10 +215,7 @@ export function LandingPageBuilderPage() {
   });
   const autosave = useDraftAutosave(async (doc: LandingPageVariant) => {
     const parsed = v.safeParse(landingPageVariantUpdateSchema, documentBody(doc));
-    if (!parsed.success)
-      throw new Error(
-        parsed.issues[0]?.message ?? "Complete the required fields before this draft can save",
-      );
+    if (!parsed.success) throw new Error(landingValidationMessage(parsed.issues[0]));
     const saved = normalizeLandingPageVariant(
       await api<LandingPageVariantPayload>(
         `/landing-page/pages/${doc.landingPageId ?? builder.data?.page?._id}/variants/${doc._id}`,
@@ -149,7 +226,15 @@ export function LandingPageBuilderPage() {
             expectedRevision: revisions.current.get(doc._id) ?? doc.revision ?? 1,
           }),
         },
-      ),
+      ).catch((error: unknown) => {
+        if (error instanceof ApiError) {
+          const details = error.details as
+            | { issues?: Parameters<typeof landingValidationMessage>[0][] }
+            | undefined;
+          if (details?.issues?.[0]) throw new Error(landingValidationMessage(details.issues[0]));
+        }
+        throw error;
+      }),
     );
     revisions.current.set(saved._id, saved.revision ?? 1);
     if (latest.current?._id === saved._id) {
@@ -261,6 +346,11 @@ export function LandingPageBuilderPage() {
       const message = error instanceof Error ? error.message : "This action failed";
       setMutationError(message);
       toast.error(message);
+      if (error instanceof ApiError && error.code === "TESTIMONIAL_INCOMPLETE") {
+        const target = error.details as { sectionId: string; blockId: string };
+        select(target.sectionId, target.blockId);
+        setMobilePanel("");
+      }
       if (discard && latest.current) autosave.schedule(latest.current);
     } finally {
       locked.current = false;
@@ -303,11 +393,13 @@ export function LandingPageBuilderPage() {
       commit({ ...draft, sections: draft.sections.map((s) => (s.id === next.id ? next : s)) });
   }
   function select(section: string, block?: string) {
+    setSectionTab("Content");
     setSectionId(section);
     setBlockId(block);
     setInspector("Selection");
     setRightOpen(true);
     setLeftOpen(false);
+    setMobilePanel("");
   }
   function focusTree() {
     requestAnimationFrame(() =>
@@ -487,6 +579,8 @@ export function LandingPageBuilderPage() {
     setSectionId(section.id);
     setInspector("Selection");
     setRightOpen(true);
+    setLeftOpen(false);
+    setMobilePanel("");
   }
   function openDialog(kind: DialogState["kind"], template?: LandingTemplate) {
     if (kind === "settings") {
@@ -620,7 +714,7 @@ export function LandingPageBuilderPage() {
                   {item.name ?? item.siteTitle}
                 </h2>
                 <p className="text-sm font-medium">
-                  {item.isPublished ? "Published" : "Unpublished"}
+                  {item.isPublished ? "Published" : "Unpublished"} · {item.accessStatus ?? ""}
                 </p>
                 <p className="break-all text-sm text-stone-500">{getPublicSiteUrl(item.slug)}</p>
                 {item.publishedAt && (
@@ -635,11 +729,20 @@ export function LandingPageBuilderPage() {
                   </Button>
                   {item.isPublished && (
                     <Button asChild variant="outline">
-                      <a href={getPublicSiteUrl(item.slug)} target="_blank" rel="noreferrer">
+                      <a
+                        aria-disabled={item.isAccessible === false}
+                        onClick={(event) => {
+                          if (item.isAccessible === false) event.preventDefault();
+                        }}
+                        href={getPublicSiteUrl(item.slug)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         View live
                       </a>
                     </Button>
                   )}
+                  <PublicAccessControl page={item} canEdit={canEdit} refresh={refresh} />
                 </div>
               </article>
             ))}
@@ -699,22 +802,275 @@ export function LandingPageBuilderPage() {
   const filteredTemplates = (templates.data?.templates ?? []).filter((t) =>
     `${t.name} ${t.description} ${t.category}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const publishAction = (
+    <Button
+      className="lb-publish"
+      permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
+      disabled={busy}
+      onClick={() =>
+        void mutate(async () => {
+          const current = latest.current ?? draft;
+          await api(`${pagePath}/publish`, {
+            method: "POST",
+            headers: { "Idempotency-Key": publishKey.current },
+            body: JSON.stringify({
+              variantId: current._id,
+              expectedVariantRevision: revisions.current.get(current._id) ?? current.revision ?? 1,
+              expectedPageRevision: page.revision ?? 1,
+            }),
+          });
+          publishKey.current = crypto.randomUUID();
+          await refresh();
+          toast.success("Published version saved. Manage Public access to activate its link.");
+        })
+      }
+    >
+      {busy ? "Working…" : "Publish"}
+    </Button>
+  );
   return (
     <div className={`lb-workspace ${preview ? "lb-preview-mode" : ""}`}>
-      <LandingWorkspaceControls
-        page={page}
-        draft={draft}
-        busy={busy}
-        canCreate={canCreate}
-        canEdit={canEdit}
-        canDelete={canDelete}
-        run={mutate}
-        onSwitchPage={switchPage}
-        latestDraft={() => latest.current}
-        onSelectDraft={selectDraft}
-        onTemplateLinked={linkedTemplate}
-        refresh={refresh}
-      />
+      <MobileEditorPanel
+        saveStatus={autosave.status}
+        saveError={autosave.error}
+        onRetry={() => void autosave.flush()}
+        mobile={mobile}
+        open={mobilePanel === "Templates" || mobilePanel === "Page management"}
+        title={mobilePanel || "Page management"}
+        close={() => setMobilePanel("")}
+      >
+        {mobile && mobilePanel === "Templates" && (
+          <button
+            type="button"
+            className="lb-add-button"
+            onClick={() => {
+              setLeftTab("Templates");
+              setLeftOpen(true);
+              setRightOpen(false);
+              setMobilePanel("");
+            }}
+          >
+            Browse design templates
+          </button>
+        )}
+        <LandingWorkspaceControls
+          actions={mobile ? (mobilePanel === "Templates" ? "templates" : "pages") : undefined}
+          page={page}
+          draft={draft}
+          busy={busy}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          run={mutate}
+          onSwitchPage={switchPage}
+          latestDraft={() => latest.current}
+          onSelectDraft={selectDraft}
+          onTemplateLinked={linkedTemplate}
+          refresh={refresh}
+        />
+      </MobileEditorPanel>
+      {mobile && (
+        <>
+          <header className="lb-phone-header">
+            <button
+              type="button"
+              aria-label="Back to landing pages"
+              disabled={busy}
+              onClick={() => void mutate(async () => switchPage(""))}
+            >
+              ←
+            </button>
+            <strong>{page.name ?? page.siteTitle}</strong>
+            <button
+              type="button"
+              onClick={() => {
+                setPreview(!preview);
+                setLeftOpen(false);
+                setRightOpen(false);
+              }}
+            >
+              {preview ? "Back to editing" : "Preview"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobilePanel(preview ? "Preview options" : "More")}
+            >
+              {preview ? "Preview options" : "More"}
+            </button>
+          </header>
+          <p className="lb-phone-save" role="status">
+            {autosave.status === "saved"
+              ? "Saved"
+              : autosave.status === "saving"
+                ? "Saving…"
+                : autosave.status === "error"
+                  ? "Not saved"
+                  : "Changes pending"}
+            {autosave.status === "error" && (
+              <button type="button" onClick={() => void autosave.flush()}>
+                Retry
+              </button>
+            )}
+          </p>
+          <MobileEditorPanel
+            saveStatus={autosave.status}
+            saveError={autosave.error}
+            onRetry={() => void autosave.flush()}
+            mobile
+            open={mobilePanel === "More"}
+            title="More"
+            close={() => setMobilePanel("")}
+          >
+            <div className="lb-phone-menu">
+              {[
+                "Publishing",
+                "Page settings",
+                "Variants",
+                "Templates",
+                "Theme",
+                "Commerce",
+                "History",
+                "Page management",
+              ].map((label) => (
+                <button
+                  type="button"
+                  key={label}
+                  onClick={() => {
+                    if (label === "Page settings") {
+                      setMobilePanel("");
+                      openDialog("settings");
+                    } else if (label === "Templates" || label === "Page management")
+                      setMobilePanel(label);
+                    else if (label === "Theme" || label === "Commerce") {
+                      setInspector(label);
+                      setRightOpen(true);
+                      setLeftOpen(false);
+                      setMobilePanel("");
+                    } else setMobilePanel(label);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </MobileEditorPanel>
+          <MobileEditorPanel
+            saveStatus={autosave.status}
+            saveError={autosave.error}
+            onRetry={() => void autosave.flush()}
+            mobile
+            open={mobilePanel === "Publishing"}
+            title="Publishing"
+            close={() => setMobilePanel("")}
+          >
+            <p>
+              {page.isPublished ? "Published" : "Unpublished"} · {page.accessStatus}
+            </p>
+            {publishAction}
+            <div className="lb-phone-publishing">
+              <a
+                href={getPublicSiteUrl(page.slug)}
+                target="_blank"
+                rel="noreferrer"
+                aria-disabled={!page.isAccessible}
+                onClick={(event) => {
+                  if (!page.isAccessible) event.preventDefault();
+                }}
+              >
+                View live ↗
+              </a>
+              <PublicAccessControl page={page} canEdit={canEdit} refresh={refresh} />
+            </div>
+            {page.isPublished && (
+              <button
+                type="button"
+                disabled={busy || !canEdit}
+                onClick={() =>
+                  void mutate(async () => {
+                    await api(pagePath + "/unpublish", {
+                      method: "POST",
+                      body: JSON.stringify({ expectedPageRevision: page.revision ?? 1 }),
+                    });
+                    await refresh();
+                  })
+                }
+              >
+                Unpublish
+              </button>
+            )}
+          </MobileEditorPanel>
+          <MobileEditorPanel
+            saveStatus={autosave.status}
+            saveError={autosave.error}
+            onRetry={() => void autosave.flush()}
+            mobile
+            open={mobilePanel === "History"}
+            title="History"
+            close={() => setMobilePanel("")}
+          >
+            <button
+              type="button"
+              disabled={busy || !canEdit || !undo.current.length}
+              onClick={() => history("undo")}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              disabled={busy || !canEdit || !redo.current.length}
+              onClick={() => history("redo")}
+            >
+              Redo
+            </button>
+          </MobileEditorPanel>
+          <MobileEditorPanel
+            saveStatus={autosave.status}
+            saveError={autosave.error}
+            onRetry={() => void autosave.flush()}
+            mobile
+            open={mobilePanel === "Preview options"}
+            title="Preview options"
+            close={() => setMobilePanel("")}
+          >
+            <label>
+              Preview width
+              <select
+                value={previewFit ? "fit" : width}
+                onChange={(event) => {
+                  setPreviewFit(event.target.value === "fit");
+                  if (event.target.value !== "fit") setWidth(Number(event.target.value));
+                }}
+              >
+                <option value="fit">Mobile fit</option>
+                <option value={768}>Tablet</option>
+                <option value={1440}>Desktop</option>
+                <option value={width}>Custom ({width}px)</option>
+              </select>
+            </label>
+            <label>
+              Custom width
+              <input
+                type="number"
+                min={320}
+                max={1920}
+                value={width}
+                onChange={(event) => {
+                  setPreviewFit(false);
+                  setWidth(Math.max(320, Math.min(1920, Number(event.target.value))));
+                }}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={motionOff}
+                onChange={(event) => setMotionOff(event.target.checked)}
+              />
+              Motion off
+            </label>
+          </MobileEditorPanel>
+        </>
+      )}
       <header className="lb-command">
         <button
           type="button"
@@ -810,96 +1166,114 @@ export function LandingPageBuilderPage() {
           >
             {preview ? "Back to editing" : "Preview"}
           </button>
-          <Button
-            className="lb-publish"
-            permission={{ path: "/landing-page/variants/id/publish", method: "POST" }}
-            disabled={busy}
-            onClick={() =>
-              void mutate(async () => {
-                const current = latest.current ?? draft;
-                await api(`${pagePath}/publish`, {
-                  method: "POST",
-                  headers: { "Idempotency-Key": publishKey.current },
-                  body: JSON.stringify({
-                    variantId: current._id,
-                    expectedVariantRevision:
-                      revisions.current.get(current._id) ?? current.revision ?? 1,
-                    expectedPageRevision: page.revision ?? 1,
-                  }),
-                });
-                publishKey.current = crypto.randomUUID();
-                await refresh();
-                toast.success("Landing page published");
-              })
-            }
-          >
-            {busy ? "Working…" : "Publish"}
-          </Button>
+          {publishAction}
         </div>
       </header>
       <div className="lb-subcommand">
         <div className="lb-publication-status">
           <strong className="lb-status-badge" data-published={page.isPublished}>
-            {page.isPublished ? "Live" : "Unpublished"}
+            {page.isPublished ? "Published" : "Unpublished"}
           </strong>
           {publishedChanges && <span>Draft differs from live</span>}
           {page.isPublished && (
-            <a href={getPublicSiteUrl(page.slug)} target="_blank" rel="noreferrer">
+            <a
+              href={getPublicSiteUrl(page.slug)}
+              target="_blank"
+              rel="noreferrer"
+              aria-disabled={page.isAccessible === false}
+              onClick={(event) => {
+                if (page.isAccessible === false) event.preventDefault();
+              }}
+            >
               View live ↗
             </a>
           )}
         </div>
-        <fieldset className="lb-variant-actions" aria-label="Variant actions">
-          <button type="button" disabled={!canCreate || busy} onClick={() => openDialog("new")}>
-            New
-          </button>
-          <button
-            type="button"
-            disabled={!canCreate || busy}
-            onClick={() => openDialog("duplicate")}
-          >
-            Duplicate
-          </button>
-          <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("rename")}>
-            Rename
-          </button>
-          <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("reset")}>
-            Reset
-          </button>
-          <button
-            type="button"
-            className="lb-danger-outline"
-            disabled={
-              !canDelete ||
-              busy ||
-              builder.data.variants.length <= 1 ||
-              page.publishedVariantId === draft._id
-            }
-            onClick={() => openDialog("delete")}
-          >
-            Delete
-          </button>
-          <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("settings")}>
-            Site settings
-          </button>
-          {page.isPublished && (
+        <MobileEditorPanel
+          saveStatus={autosave.status}
+          saveError={autosave.error}
+          onRetry={() => void autosave.flush()}
+          mobile={mobile}
+          open={mobilePanel === "Variants"}
+          title="Variants"
+          close={() => setMobilePanel("")}
+        >
+          {mobile && (
+            <InspectorField label="Variant">
+              <select
+                value={draft._id}
+                onChange={(event) => {
+                  const next = builder.data.variants.find(
+                    (item) => item._id === event.target.value,
+                  );
+                  if (next) void mutate(async () => selectDraft(next));
+                }}
+              >
+                {builder.data.variants.map((item) => (
+                  <option key={item._id} value={item._id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </InspectorField>
+          )}
+          <fieldset className="lb-variant-actions" aria-label="Variant actions">
+            <button type="button" disabled={!canCreate || busy} onClick={() => openDialog("new")}>
+              New
+            </button>
+            <button
+              type="button"
+              disabled={!canCreate || busy}
+              onClick={() => openDialog("duplicate")}
+            >
+              Duplicate
+            </button>
+            <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("rename")}>
+              Rename
+            </button>
+            <button type="button" disabled={!canEdit || busy} onClick={() => openDialog("reset")}>
+              Reset
+            </button>
+            <button
+              type="button"
+              className="lb-danger-outline"
+              disabled={
+                !canDelete ||
+                busy ||
+                builder.data.variants.length <= 1 ||
+                page.publishedVariantId === draft._id
+              }
+              onClick={() => openDialog("delete")}
+            >
+              Delete
+            </button>
             <button
               type="button"
               disabled={!canEdit || busy}
-              onClick={() =>
-                void mutate(async () => {
-                  await api(`${pagePath}/unpublish`, {
-                    method: "POST",
-                    body: JSON.stringify({ expectedPageRevision: page.revision ?? 1 }),
-                  });
-                  await refresh();
-                })
-              }
+              onClick={() => openDialog("settings")}
             >
-              Unpublish
+              Site settings
             </button>
-          )}
-        </fieldset>
+            {page.isPublished && (
+              <button
+                type="button"
+                disabled={!canEdit || busy}
+                onClick={() =>
+                  void mutate(async () => {
+                    await api(`${pagePath}/unpublish`, {
+                      method: "POST",
+                      body: JSON.stringify({ expectedPageRevision: page.revision ?? 1 }),
+                    });
+                    await refresh();
+                  })
+                }
+              >
+                Unpublish
+              </button>
+            )}
+          </fieldset>
+        </MobileEditorPanel>
+        {!mobile && <PublicAccessControl page={page} canEdit={canEdit} refresh={refresh} />}
       </div>
       {(autosave.error || mutationError) && (
         <div role="alert" className="lb-error">
@@ -955,139 +1329,172 @@ export function LandingPageBuilderPage() {
       )}
       <div className="lb-body">
         {!preview && (
-          <aside
-            id="landing-sections"
-            className={`lb-left ${leftOpen ? "lb-panel-open" : ""}`}
-            aria-label="Sections and templates"
+          <MobileEditorPanel
+            saveStatus={autosave.status}
+            saveError={autosave.error}
+            onRetry={() => void autosave.flush()}
+            mobile={mobile}
+            open={leftOpen}
+            title={leftTab}
+            close={() => setLeftOpen(false)}
           >
-            <div className="lb-tabs" role="tablist">
-              {(["Sections", "Add", "Templates"] as const).map((t) => (
-                <button
-                  type="button"
-                  key={t}
-                  role="tab"
-                  aria-selected={leftTab === t}
-                  onClick={() => {
-                    setLeftTab(t);
-                    setSearch("");
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-            {leftTab !== "Sections" && (
-              <input
-                className="lb-panel-search"
-                aria-label={`Search ${leftTab.toLowerCase()}`}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search ${leftTab.toLowerCase()}`}
-              />
-            )}
-            <fieldset disabled={busy || !canEdit} className="lb-tree-fieldset">
-              {leftTab === "Sections" && (
-                <>
-                  <SectionTree
-                    sections={draft.sections}
-                    selectedSection={sectionId}
-                    selectedBlock={blockId}
-                    onSelect={select}
-                    onSection={sectionAction}
-                    onBlock={blockAction}
-                    onDrag={drag}
-                  />
+            <aside
+              id="landing-sections"
+              className={`lb-left ${leftOpen ? "lb-panel-open" : ""}`}
+              aria-label="Sections and templates"
+            >
+              <div className="lb-tabs" role="tablist">
+                {(["Sections", "Add", "Templates"] as const).map((t) => (
                   <button
                     type="button"
-                    className="lb-add-button"
-                    disabled={draft.sections.length >= 20}
+                    key={t}
+                    role="tab"
+                    aria-selected={leftTab === t}
                     onClick={() => {
-                      const s = createLandingSection();
-                      const footerIndex = draft.sections.findIndex((s) =>
-                        s.components.some((c) => c.type === "FOOTER"),
-                      );
-                      const sections = [...draft.sections];
-                      sections.splice(footerIndex < 0 ? sections.length : footerIndex, 0, s);
-                      commit({ ...draft, sections });
-                      select(s.id);
+                      setLeftTab(t);
+                      setSearch("");
                     }}
                   >
-                    + Add section
+                    {t}
                   </button>
-                  <p className="lb-help">
-                    {draft.sections.length}/20 sections · {count}/30 blocks
-                  </p>
-                </>
-              )}
-              {leftTab === "Add" &&
-                (["Content", "Commerce", "Media", "Navigation"] as const).map((group) => (
-                  <div key={group} className="lb-add-group">
-                    <h3>{group}</h3>
-                    {Object.entries(blockRegistry)
-                      .filter(
-                        ([type, entry]) =>
-                          entry.group === group &&
-                          (v2 ||
-                            [
-                              "HERO",
-                              "TEXT",
-                              "MENU",
-                              "CATALOG",
-                              "GALLERY",
-                              "CONTACT",
-                              "CTA",
-                            ].includes(type)) &&
-                          entry.label.toLowerCase().includes(search.toLowerCase()),
-                      )
-                      .map(([type, entry]) => (
-                        <button
-                          type="button"
-                          key={type}
-                          disabled={count >= 30}
-                          onClick={() => add(type as LandingPageComponentType)}
-                        >
-                          <Icon icon={entry.icon} />
-                          {entry.label}
-                          <span>+</span>
-                        </button>
-                      ))}
-                  </div>
                 ))}
-            </fieldset>
-            {leftTab === "Templates" && (
-              <div className="lb-template-list">
-                {templates.isError && (
-                  <QueryError message={templates.error.message} retry={() => templates.refetch()} />
-                )}{" "}
-                {!v2 && (
-                  <p className="lb-help">
-                    Upgrade your design as a new variant. Your original remains available.
-                  </p>
-                )}
-                {filteredTemplates.map((t) => (
-                  <article key={t.id}>
-                    <img src={t.preview} alt={`${t.name} design direction`} loading="lazy" />
-                    <div>
-                      <h3>{t.name}</h3>
-                      <p>{t.description}</p>
-                      <span>
-                        {t.category} · {t.goal}
-                      </span>
-                      <Button
-                        disabled={busy || !canCreate}
-                        onClick={() => openDialog("template", t)}
-                      >
-                        View template
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-                {!templates.isLoading && !filteredTemplates.length && !templates.isError && (
-                  <p className="lb-help">No templates match your search.</p>
-                )}
               </div>
-            )}
-          </aside>
+              {leftTab === "Add" && (
+                <InspectorField label="Destination section">
+                  <select
+                    value={sectionId ?? draft.sections[0]?.id}
+                    onChange={(event) => setSectionId(event.target.value)}
+                  >
+                    {draft.sections.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                        {item.enabled ? "" : " (hidden)"}
+                      </option>
+                    ))}
+                  </select>
+                </InspectorField>
+              )}
+              {leftTab !== "Sections" && (
+                <input
+                  className="lb-panel-search"
+                  aria-label={`Search ${leftTab.toLowerCase()}`}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={`Search ${leftTab.toLowerCase()}`}
+                />
+              )}
+              <fieldset disabled={busy || !canEdit} className="lb-tree-fieldset">
+                {leftTab === "Sections" && (
+                  <>
+                    <SectionTree
+                      sections={draft.sections}
+                      selectedSection={sectionId}
+                      selectedBlock={blockId}
+                      onSelect={select}
+                      onSection={sectionAction}
+                      onBlock={blockAction}
+                      onDrag={drag}
+                    />
+                    <button
+                      type="button"
+                      className="lb-add-button"
+                      disabled={draft.sections.length >= 20}
+                      onClick={() => {
+                        const s = createLandingSection();
+                        const footerIndex = draft.sections.findIndex((s) =>
+                          s.components.some((c) => c.type === "FOOTER"),
+                        );
+                        const sections = [...draft.sections];
+                        sections.splice(footerIndex < 0 ? sections.length : footerIndex, 0, s);
+                        commit({ ...draft, sections });
+                        select(s.id);
+                      }}
+                    >
+                      + Add section
+                    </button>
+                    <p className="lb-help">
+                      {draft.sections.length}/20 sections · {count}/30 blocks
+                    </p>
+                  </>
+                )}
+                {leftTab === "Add" &&
+                  (["Content", "Commerce", "Media", "Navigation"] as const).map((group) => (
+                    <div key={group} className="lb-add-group">
+                      <h3>{group}</h3>
+                      {Object.entries(blockRegistry)
+                        .filter(
+                          ([type, entry]) =>
+                            entry.group === group &&
+                            (v2 ||
+                              [
+                                "HERO",
+                                "TEXT",
+                                "MENU",
+                                "CATALOG",
+                                "GALLERY",
+                                "CONTACT",
+                                "CTA",
+                              ].includes(type)) &&
+                            entry.label.toLowerCase().includes(search.toLowerCase()),
+                        )
+                        .map(([type, entry]) => (
+                          <button
+                            type="button"
+                            key={type}
+                            disabled={count >= 30}
+                            onClick={() => add(type as LandingPageComponentType)}
+                          >
+                            <Icon icon={entry.icon} />
+                            {entry.label}
+                            <span>+</span>
+                          </button>
+                        ))}
+                    </div>
+                  ))}
+              </fieldset>
+              {leftTab === "Templates" && (
+                <div className="lb-template-list">
+                  {templates.isError && (
+                    <QueryError
+                      message={templates.error.message}
+                      retry={() => templates.refetch()}
+                    />
+                  )}{" "}
+                  {!v2 && (
+                    <p className="lb-help">
+                      Upgrade your design as a new variant. Your original remains available.
+                    </p>
+                  )}
+                  {filteredTemplates.map((t) => (
+                    <article key={t.id}>
+                      <StoredImage
+                        placeholder="skeleton"
+                        src={t.preview}
+                        alt={`${t.name} design direction`}
+                        loading="lazy"
+                      />
+                      <div>
+                        <h3>{t.name}</h3>
+                        <p>{t.description}</p>
+                        <span>
+                          {t.category} · {t.goal}
+                        </span>
+                        <Button
+                          disabled={busy || !canCreate}
+                          onClick={() => openDialog("template", t)}
+                        >
+                          View template
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                  {!templates.isLoading && !filteredTemplates.length && !templates.isError && (
+                    <p className="lb-help">No templates match your search.</p>
+                  )}
+                </div>
+              )}
+            </aside>
+          </MobileEditorPanel>
         )}
         <main className="lb-canvas-area">
           <div className="lb-canvas-label">
@@ -1103,7 +1510,7 @@ export function LandingPageBuilderPage() {
           </div>
           <div className="lb-canvas-scroll">
             <PreviewFrame
-              width={width}
+              width={mobile && (!preview || previewFit) ? mobileWidth : width}
               payload={{
                 draft,
                 catalogItems: builder.data.catalogItems,
@@ -1117,418 +1524,501 @@ export function LandingPageBuilderPage() {
           </div>
         </main>
         {!preview && (
-          <aside
-            id="landing-inspector"
-            className={`lb-inspector ${rightOpen ? "lb-panel-open" : ""}`}
-            aria-label="Inspector"
+          <MobileEditorPanel
+            saveStatus={autosave.status}
+            saveError={autosave.error}
+            onRetry={() => void autosave.flush()}
+            mobile={mobile}
+            open={rightOpen}
+            title={inspector === "Selection" ? "Edit" : inspector}
+            close={() => setRightOpen(false)}
           >
-            <div className="lb-inspector-nav">
-              {(["Selection", "Theme", "Commerce"] as const).map((t) => (
+            <aside
+              id="landing-inspector"
+              className={`lb-inspector ${rightOpen ? "lb-panel-open" : ""}`}
+              aria-label="Inspector"
+            >
+              <div className="lb-inspector-nav">
+                {(["Selection", "Theme", "Commerce"] as const).map((t) => (
+                  <button
+                    type="button"
+                    key={t}
+                    aria-pressed={inspector === t}
+                    onClick={() => setInspector(t)}
+                  >
+                    {t}
+                  </button>
+                ))}
                 <button
                   type="button"
-                  key={t}
-                  aria-pressed={inspector === t}
-                  onClick={() => setInspector(t)}
+                  className="lb-close-panel"
+                  aria-label="Close inspector"
+                  onClick={() => setRightOpen(false)}
                 >
-                  {t}
+                  ×
                 </button>
-              ))}
-              <button
-                type="button"
-                className="lb-close-panel"
-                aria-label="Close inspector"
-                onClick={() => setRightOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <fieldset disabled={busy || !canEdit} className="lb-inspector-fields">
-              {inspector === "Selection" &&
-                (block ? (
-                  <BlockInspector
-                    key={block.id}
-                    block={block}
-                    draft={draft}
-                    catalog={builder.data.catalogItems}
-                    onChange={updateBlock}
-                  />
-                ) : section ? (
-                  <>
-                    <h2>Section</h2>
-                    <InspectorField label="Section name">
-                      <input
-                        maxLength={80}
-                        value={section.name}
-                        onChange={(e) => updateSection({ ...section, name: e.target.value })}
-                      />
-                    </InspectorField>
-                    {v2 && (
-                      <InspectorField label="Anchor">
-                        <input
-                          value={section.anchor ?? section.id}
-                          onChange={(e) => updateSection({ ...section, anchor: e.target.value })}
+              </div>
+              <fieldset disabled={busy || !canEdit} className="lb-inspector-fields">
+                {inspector === "Selection" &&
+                  (block ? (
+                    <BlockInspector
+                      key={block.id}
+                      block={block}
+                      mobile={mobile}
+                      draft={draft}
+                      catalog={builder.data.catalogItems}
+                      onChange={updateBlock}
+                    />
+                  ) : section ? (
+                    <>
+                      <h2>Section</h2>
+                      {mobile && (
+                        <div className="lb-tabs" role="tablist">
+                          {["Content", "Appearance", ...(v2 ? ["Advanced"] : [])].map((tab) => (
+                            <button
+                              key={tab}
+                              type="button"
+                              role="tab"
+                              aria-selected={sectionTab === tab}
+                              onClick={() => setSectionTab(tab)}
+                            >
+                              {tab}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div hidden={mobile && sectionTab !== "Content"}>
+                        <label className="lb-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={section.enabled}
+                            onChange={(event) =>
+                              updateSection({ ...section, enabled: event.target.checked })
+                            }
+                          />
+                          Show section
+                        </label>
+                        <InspectorField label="Section name">
+                          <input
+                            maxLength={80}
+                            value={section.name}
+                            onChange={(e) => updateSection({ ...section, name: e.target.value })}
+                          />
+                        </InspectorField>
+                      </div>
+                      {v2 && (!mobile || sectionTab === "Advanced") && (
+                        <InspectorField label="Anchor">
+                          <input
+                            value={section.anchor ?? section.id}
+                            onChange={(e) => updateSection({ ...section, anchor: e.target.value })}
+                          />
+                        </InspectorField>
+                      )}
+                      <div hidden={mobile && sectionTab !== "Appearance"}>
+                        <InspectorSelect
+                          label="Content width"
+                          value={section.contentWidth}
+                          values={["FULL", "WIDE", "CONTAINED"]}
+                          onChange={(v) =>
+                            updateSection({
+                              ...section,
+                              contentWidth: v as LandingPageSection["contentWidth"],
+                            })
+                          }
                         />
-                      </InspectorField>
+                        <InspectorSelect
+                          label="Spacing"
+                          value={section.padding}
+                          values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
+                          onChange={(v) =>
+                            updateSection({
+                              ...section,
+                              padding: v as LandingPageSection["padding"],
+                            })
+                          }
+                        />
+                        <InspectorSelect
+                          label="Gap"
+                          value={section.gap}
+                          values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
+                          onChange={(v) =>
+                            updateSection({ ...section, gap: v as LandingPageSection["gap"] })
+                          }
+                        />
+                        <ColorField
+                          label="Section color"
+                          value={section.backgroundColor}
+                          onChange={(backgroundColor) =>
+                            updateSection({ ...section, backgroundColor })
+                          }
+                        />
+                        <InspectorField label="Maximum section height (0 for automatic)">
+                          <input
+                            type="number"
+                            min={0}
+                            max={3000}
+                            step={1}
+                            value={section.maxHeight ?? 0}
+                            onChange={(e) =>
+                              updateSection({ ...section, maxHeight: Number(e.target.value) })
+                            }
+                          />
+                        </InspectorField>
+                        {v2 && (
+                          <>
+                            {(["padding", "gap"] as const).map((key) => (
+                              <InspectorSelect
+                                key={key}
+                                label={`Mobile section ${key}`}
+                                value={section.mobile?.[key] ?? section[key]}
+                                values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
+                                onChange={(v) =>
+                                  updateSection({
+                                    ...section,
+                                    mobile: {
+                                      padding: section.mobile?.padding ?? section.padding,
+                                      gap: section.mobile?.gap ?? section.gap,
+                                      [key]: v as "NONE" | "SMALL" | "MEDIUM" | "LARGE",
+                                    },
+                                  })
+                                }
+                              />
+                            ))}
+                          </>
+                        )}
+                        <ColorField
+                          label="Section text"
+                          value={section.textColor}
+                          onChange={(textColor) => updateSection({ ...section, textColor })}
+                        />
+                        {v2 && (
+                          <BackgroundInspector
+                            value={section.background}
+                            color={draft.theme.backgroundColor}
+                            templateId={draft.template?.id}
+                            onChange={(background) => updateSection({ ...section, background })}
+                          />
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="lb-help">Select a section or a block in the canvas.</p>
+                  ))}
+                {inspector === "Theme" && (
+                  <>
+                    <h2>Design system</h2>
+                    {v2 && (
+                      <InspectorSelect
+                        label="Body font"
+                        value={draft.theme.bodyFont ?? "APP_SANS"}
+                        values={["APP_SANS", "SYSTEM"]}
+                        onChange={(v) =>
+                          commit({
+                            ...draft,
+                            theme: { ...draft.theme, bodyFont: v as "APP_SANS" | "SYSTEM" },
+                          })
+                        }
+                      />
                     )}
+                    {(
+                      [
+                        "primaryColor",
+                        "backgroundColor",
+                        "surfaceColor",
+                        "textColor",
+                        ...(v2 ? ["accentColor", "mutedTextColor", "borderColor"] : []),
+                      ] as Array<keyof LandingPageVariant["theme"]>
+                    ).map((key) => (
+                      <ColorField
+                        key={key}
+                        label={String(key).replace("Color", " color")}
+                        value={String(draft.theme[key] ?? "")}
+                        onChange={(value) =>
+                          commit({ ...draft, theme: { ...draft.theme, [key]: value } })
+                        }
+                      />
+                    ))}
                     <InspectorSelect
-                      label="Content width"
-                      value={section.contentWidth}
-                      values={["FULL", "WIDE", "CONTAINED"]}
-                      onChange={(v) =>
-                        updateSection({
-                          ...section,
-                          contentWidth: v as LandingPageSection["contentWidth"],
+                      label="Button style"
+                      value={draft.theme.buttonStyle}
+                      values={["ROUNDED", "PILL", "SQUARE"]}
+                      onChange={(value) =>
+                        commit({
+                          ...draft,
+                          theme: {
+                            ...draft.theme,
+                            buttonStyle: value as LandingPageVariant["theme"]["buttonStyle"],
+                          },
                         })
                       }
                     />
-                    <InspectorSelect
-                      label="Spacing"
-                      value={section.padding}
-                      values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
-                      onChange={(v) =>
-                        updateSection({ ...section, padding: v as LandingPageSection["padding"] })
-                      }
-                    />
-                    <InspectorSelect
-                      label="Gap"
-                      value={section.gap}
-                      values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
-                      onChange={(v) =>
-                        updateSection({ ...section, gap: v as LandingPageSection["gap"] })
-                      }
-                    />
-                    <ColorField
-                      label="Section color"
-                      value={section.backgroundColor}
-                      onChange={(backgroundColor) => updateSection({ ...section, backgroundColor })}
-                    />
-                    <InspectorField label="Maximum section height (0 for automatic)">
-                      <input
-                        type="number"
-                        min={0}
-                        max={3000}
-                        step={1}
-                        value={section.maxHeight ?? 0}
-                        onChange={(e) =>
-                          updateSection({ ...section, maxHeight: Number(e.target.value) })
-                        }
-                      />
-                    </InspectorField>
-                    {v2 && (
+                    {v2 ? (
                       <>
-                        {(["padding", "gap"] as const).map((key) => (
-                          <InspectorSelect
-                            key={key}
-                            label={`Mobile section ${key}`}
-                            value={section.mobile?.[key] ?? section[key]}
-                            values={["NONE", "SMALL", "MEDIUM", "LARGE"]}
-                            onChange={(v) =>
-                              updateSection({
-                                ...section,
-                                mobile: {
-                                  padding: section.mobile?.padding ?? section.padding,
-                                  gap: section.mobile?.gap ?? section.gap,
-                                  [key]: v as "NONE" | "SMALL" | "MEDIUM" | "LARGE",
-                                },
-                              })
-                            }
-                          />
-                        ))}
+                        <InspectorSelect
+                          label="Display font"
+                          value={draft.theme.displayFont}
+                          values={[
+                            "LEGACY",
+                            "DISPLAY_CONDENSED",
+                            "EDITORIAL_SERIF",
+                            "MODERN_GROTESK",
+                          ]}
+                          onChange={(value) =>
+                            commit({
+                              ...draft,
+                              theme: {
+                                ...draft.theme,
+                                displayFont: value as LandingPageVariant["theme"]["displayFont"],
+                              },
+                            })
+                          }
+                        />
+                        <InspectorSelect
+                          label="Content maximum width"
+                          value={draft.theme.contentMaxWidth}
+                          values={[1120, 1280, 1440]}
+                          onChange={(value) =>
+                            commit({
+                              ...draft,
+                              theme: {
+                                ...draft.theme,
+                                contentMaxWidth: Number(value) as 1120 | 1280 | 1440,
+                              },
+                            })
+                          }
+                        />
+                        <InspectorSelect
+                          label="Motion intensity"
+                          value={draft.theme.motionLevel}
+                          values={["OFF", "SUBTLE", "EXPRESSIVE"]}
+                          onChange={(value) =>
+                            commit({
+                              ...draft,
+                              theme: {
+                                ...draft.theme,
+                                motionLevel: value as "OFF" | "SUBTLE" | "EXPRESSIVE",
+                              },
+                            })
+                          }
+                        />
+                        <BackgroundInspector
+                          value={draft.theme.background}
+                          inherit={false}
+                          color={draft.theme.backgroundColor}
+                          templateId={draft.template?.id}
+                          onChange={(background) =>
+                            commit({ ...draft, theme: { ...draft.theme, background } })
+                          }
+                        />
                       </>
-                    )}
-                    <ColorField
-                      label="Section text"
-                      value={section.textColor}
-                      onChange={(textColor) => updateSection({ ...section, textColor })}
-                    />
-                    {v2 && (
-                      <BackgroundInspector
-                        value={section.background}
-                        color={draft.theme.backgroundColor}
-                        templateId={draft.template?.id}
-                        onChange={(background) => updateSection({ ...section, background })}
+                    ) : (
+                      <InspectorSelect
+                        label="Font style"
+                        value={draft.theme.fontStyle}
+                        values={["MODERN", "CLASSIC"]}
+                        onChange={(value) =>
+                          commit({
+                            ...draft,
+                            theme: { ...draft.theme, fontStyle: value as "MODERN" | "CLASSIC" },
+                          })
+                        }
                       />
                     )}
                   </>
-                ) : (
-                  <p className="lb-help">Select a section or a block in the canvas.</p>
-                ))}
-              {inspector === "Theme" && (
-                <>
-                  <h2>Design system</h2>
-                  {v2 && (
+                )}
+                {inspector === "Commerce" && (
+                  <>
+                    <h2>Conversion & checkout</h2>
+                    {v2 && (
+                      <InspectorSelect
+                        label="Conversion goal"
+                        value={draft.goal}
+                        values={["SHOP", "CATALOG", "INQUIRY"]}
+                        onChange={(value) =>
+                          commit({
+                            ...draft,
+                            goal: value as LandingGoal,
+                            commerce: { ...draft.commerce, orderingEnabled: value === "SHOP" },
+                          })
+                        }
+                      />
+                    )}
+                    <p className="lb-help">
+                      Shop enables ordering. Catalog and inquiry show product details and real
+                      contact links.
+                    </p>
+                    <label className="lb-checkbox">
+                      <input
+                        type="checkbox"
+                        disabled={v2 && draft.goal !== "SHOP"}
+                        checked={draft.commerce.orderingEnabled}
+                        onChange={(e) =>
+                          commit({
+                            ...draft,
+                            commerce: { ...draft.commerce, orderingEnabled: e.target.checked },
+                          })
+                        }
+                      />
+                      Enable ordering
+                    </label>
+                    <InspectorField label="Cart button label">
+                      <input
+                        maxLength={30}
+                        value={draft.commerce.cartButtonLabel}
+                        onChange={(e) =>
+                          commit({
+                            ...draft,
+                            commerce: { ...draft.commerce, cartButtonLabel: e.target.value },
+                          })
+                        }
+                      />
+                    </InspectorField>
                     <InspectorSelect
-                      label="Body font"
-                      value={draft.theme.bodyFont ?? "APP_SANS"}
-                      values={["APP_SANS", "SYSTEM"]}
+                      label="Cart button position"
+                      value={draft.commerce.cartButtonPosition}
+                      values={["BOTTOM_LEFT", "BOTTOM_RIGHT"]}
                       onChange={(v) =>
                         commit({
                           ...draft,
-                          theme: { ...draft.theme, bodyFont: v as "APP_SANS" | "SYSTEM" },
+                          commerce: {
+                            ...draft.commerce,
+                            cartButtonPosition: v as "BOTTOM_LEFT" | "BOTTOM_RIGHT",
+                          },
                         })
                       }
                     />
-                  )}
-                  {(
-                    [
-                      "primaryColor",
-                      "backgroundColor",
-                      "surfaceColor",
-                      "textColor",
-                      ...(v2 ? ["accentColor", "mutedTextColor", "borderColor"] : []),
-                    ] as Array<keyof LandingPageVariant["theme"]>
-                  ).map((key) => (
-                    <ColorField
-                      key={key}
-                      label={String(key).replace("Color", " color")}
-                      value={String(draft.theme[key] ?? "")}
-                      onChange={(value) =>
-                        commit({ ...draft, theme: { ...draft.theme, [key]: value } })
-                      }
-                    />
-                  ))}
-                  <InspectorSelect
-                    label="Button style"
-                    value={draft.theme.buttonStyle}
-                    values={["ROUNDED", "PILL", "SQUARE"]}
-                    onChange={(value) =>
-                      commit({
-                        ...draft,
-                        theme: {
-                          ...draft.theme,
-                          buttonStyle: value as LandingPageVariant["theme"]["buttonStyle"],
-                        },
-                      })
-                    }
-                  />
-                  {v2 ? (
-                    <>
-                      <InspectorSelect
-                        label="Display font"
-                        value={draft.theme.displayFont}
-                        values={[
-                          "LEGACY",
-                          "DISPLAY_CONDENSED",
-                          "EDITORIAL_SERIF",
-                          "MODERN_GROTESK",
-                        ]}
-                        onChange={(value) =>
-                          commit({
-                            ...draft,
-                            theme: {
-                              ...draft.theme,
-                              displayFont: value as LandingPageVariant["theme"]["displayFont"],
-                            },
-                          })
-                        }
-                      />
-                      <InspectorSelect
-                        label="Content maximum width"
-                        value={draft.theme.contentMaxWidth}
-                        values={[1120, 1280, 1440]}
-                        onChange={(value) =>
-                          commit({
-                            ...draft,
-                            theme: {
-                              ...draft.theme,
-                              contentMaxWidth: Number(value) as 1120 | 1280 | 1440,
-                            },
-                          })
-                        }
-                      />
-                      <InspectorSelect
-                        label="Motion intensity"
-                        value={draft.theme.motionLevel}
-                        values={["OFF", "SUBTLE", "EXPRESSIVE"]}
-                        onChange={(value) =>
-                          commit({
-                            ...draft,
-                            theme: {
-                              ...draft.theme,
-                              motionLevel: value as "OFF" | "SUBTLE" | "EXPRESSIVE",
-                            },
-                          })
-                        }
-                      />
-                      <BackgroundInspector
-                        value={draft.theme.background}
-                        inherit={false}
-                        color={draft.theme.backgroundColor}
-                        templateId={draft.template?.id}
-                        onChange={(background) =>
-                          commit({ ...draft, theme: { ...draft.theme, background } })
-                        }
-                      />
-                    </>
-                  ) : (
-                    <InspectorSelect
-                      label="Font style"
-                      value={draft.theme.fontStyle}
-                      values={["MODERN", "CLASSIC"]}
-                      onChange={(value) =>
-                        commit({
-                          ...draft,
-                          theme: { ...draft.theme, fontStyle: value as "MODERN" | "CLASSIC" },
-                        })
-                      }
-                    />
-                  )}
-                </>
-              )}
-              {inspector === "Commerce" && (
-                <>
-                  <h2>Conversion & checkout</h2>
-                  {v2 && (
-                    <InspectorSelect
-                      label="Conversion goal"
-                      value={draft.goal}
-                      values={["SHOP", "CATALOG", "INQUIRY"]}
-                      onChange={(value) =>
-                        commit({
-                          ...draft,
-                          goal: value as LandingGoal,
-                          commerce: { ...draft.commerce, orderingEnabled: value === "SHOP" },
-                        })
-                      }
-                    />
-                  )}
-                  <p className="lb-help">
-                    Shop enables ordering. Catalog and inquiry show product details and real contact
-                    links.
-                  </p>
-                  <label className="lb-checkbox">
-                    <input
-                      type="checkbox"
-                      disabled={v2 && draft.goal !== "SHOP"}
-                      checked={draft.commerce.orderingEnabled}
-                      onChange={(e) =>
-                        commit({
-                          ...draft,
-                          commerce: { ...draft.commerce, orderingEnabled: e.target.checked },
-                        })
-                      }
-                    />
-                    Enable ordering
-                  </label>
-                  <InspectorField label="Cart button label">
-                    <input
-                      maxLength={30}
-                      value={draft.commerce.cartButtonLabel}
-                      onChange={(e) =>
-                        commit({
-                          ...draft,
-                          commerce: { ...draft.commerce, cartButtonLabel: e.target.value },
-                        })
-                      }
-                    />
-                  </InspectorField>
-                  <InspectorSelect
-                    label="Cart button position"
-                    value={draft.commerce.cartButtonPosition}
-                    values={["BOTTOM_LEFT", "BOTTOM_RIGHT"]}
-                    onChange={(v) =>
-                      commit({
-                        ...draft,
-                        commerce: {
-                          ...draft.commerce,
-                          cartButtonPosition: v as "BOTTOM_LEFT" | "BOTTOM_RIGHT",
-                        },
-                      })
-                    }
-                  />
-                  {(["PICKUP", "DELIVERY"] as const).map((method) => (
-                    <label key={method} className="lb-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={draft.commerce.fulfillmentMethods.includes(method)}
-                        onChange={(e) => {
-                          const payment =
-                            method === "PICKUP" ? "PAY_ON_PICKUP" : "CASH_ON_DELIVERY";
-                          commit({
-                            ...draft,
-                            commerce: {
-                              ...draft.commerce,
-                              fulfillmentMethods: e.target.checked
-                                ? [...draft.commerce.fulfillmentMethods, method]
-                                : draft.commerce.fulfillmentMethods.filter((m) => m !== method),
-                              paymentMethods: e.target.checked
-                                ? [...draft.commerce.paymentMethods, payment]
-                                : draft.commerce.paymentMethods.filter((m) => m !== payment),
-                            },
-                          });
-                        }}
-                      />
-                      {method === "PICKUP"
-                        ? "Pickup · Pay on pickup"
-                        : "Delivery · Cash on delivery"}
-                    </label>
-                  ))}
-                  {(["minimumOrder", "deliveryFee"] as const).map((key) => (
-                    <InspectorField
-                      key={key}
-                      label={key === "minimumOrder" ? "Minimum order" : "Delivery fee"}
-                    >
-                      <input
-                        type="number"
-                        min={0}
-                        max={1000000}
-                        step={0.01}
-                        value={draft.commerce[key]}
-                        onChange={(e) =>
-                          commit({
-                            ...draft,
-                            commerce: { ...draft.commerce, [key]: Number(e.target.value) },
-                          })
-                        }
-                      />
-                    </InspectorField>
-                  ))}
-                  <InspectorField label="Checkout instructions">
-                    <textarea
-                      maxLength={500}
-                      value={draft.commerce.checkoutInstructions}
-                      onChange={(e) =>
-                        commit({
-                          ...draft,
-                          commerce: { ...draft.commerce, checkoutInstructions: e.target.value },
-                        })
-                      }
-                    />
-                  </InspectorField>
-                  {v2 && (
-                    <InspectorField label="Inline merchant contact">
-                      <select
-                        value={draft.commerce.contactBlockId ?? ""}
-                        onChange={(e) =>
-                          commit({
-                            ...draft,
-                            commerce: {
-                              ...draft.commerce,
-                              contactBlockId: e.target.value || undefined,
-                            },
-                          })
-                        }
+                    {(["PICKUP", "DELIVERY"] as const).map((method) => (
+                      <label key={method} className="lb-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={draft.commerce.fulfillmentMethods.includes(method)}
+                          onChange={(e) => {
+                            const payment =
+                              method === "PICKUP" ? "PAY_ON_PICKUP" : "CASH_ON_DELIVERY";
+                            commit({
+                              ...draft,
+                              commerce: {
+                                ...draft.commerce,
+                                fulfillmentMethods: e.target.checked
+                                  ? [...draft.commerce.fulfillmentMethods, method]
+                                  : draft.commerce.fulfillmentMethods.filter((m) => m !== method),
+                                paymentMethods: e.target.checked
+                                  ? [...draft.commerce.paymentMethods, payment]
+                                  : draft.commerce.paymentMethods.filter((m) => m !== payment),
+                              },
+                            });
+                          }}
+                        />
+                        {method === "PICKUP"
+                          ? "Pickup · Pay on pickup"
+                          : "Delivery · Cash on delivery"}
+                      </label>
+                    ))}
+                    {(["minimumOrder", "deliveryFee"] as const).map((key) => (
+                      <InspectorField
+                        key={key}
+                        label={key === "minimumOrder" ? "Minimum order" : "Delivery fee"}
                       >
-                        <option value="">Separate contact section</option>
-                        {draft.sections
-                          .filter((s) => s.enabled)
-                          .flatMap((s) =>
-                            s.components.filter((c) => c.enabled && c.type === "CONTACT"),
-                          )
-                          .map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.type === "CONTACT" ? c.content.heading : c.id}
-                            </option>
-                          ))}
-                      </select>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1000000}
+                          step={0.01}
+                          value={draft.commerce[key]}
+                          onChange={(e) =>
+                            commit({
+                              ...draft,
+                              commerce: { ...draft.commerce, [key]: Number(e.target.value) },
+                            })
+                          }
+                        />
+                      </InspectorField>
+                    ))}
+                    <InspectorField label="Checkout instructions">
+                      <textarea
+                        maxLength={500}
+                        value={draft.commerce.checkoutInstructions}
+                        onChange={(e) =>
+                          commit({
+                            ...draft,
+                            commerce: { ...draft.commerce, checkoutInstructions: e.target.value },
+                          })
+                        }
+                      />
                     </InspectorField>
-                  )}
-                </>
-              )}
-            </fieldset>
-          </aside>
+                    {v2 && (
+                      <InspectorField label="Inline merchant contact">
+                        <select
+                          value={draft.commerce.contactBlockId ?? ""}
+                          onChange={(e) =>
+                            commit({
+                              ...draft,
+                              commerce: {
+                                ...draft.commerce,
+                                contactBlockId: e.target.value || undefined,
+                              },
+                            })
+                          }
+                        >
+                          <option value="">Separate contact section</option>
+                          {draft.sections
+                            .filter((s) => s.enabled)
+                            .flatMap((s) =>
+                              s.components.filter((c) => c.enabled && c.type === "CONTACT"),
+                            )
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.type === "CONTACT" ? c.content.heading : c.id}
+                              </option>
+                            ))}
+                        </select>
+                      </InspectorField>
+                    )}
+                  </>
+                )}
+              </fieldset>
+            </aside>
+          </MobileEditorPanel>
         )}
       </div>
+      {mobile && !preview && (
+        <nav className="lb-phone-tools" aria-label="Editor tools">
+          <button
+            type="button"
+            onClick={() => {
+              setLeftTab("Sections");
+              setLeftOpen(true);
+              setRightOpen(false);
+              setMobilePanel("");
+            }}
+          >
+            Sections
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLeftTab("Add");
+              setLeftOpen(true);
+              setRightOpen(false);
+              setMobilePanel("");
+            }}
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRightOpen(Boolean(block || section));
+              setLeftOpen(!block && !section);
+              setLeftTab("Sections");
+              setInspector("Selection");
+              setMobilePanel("");
+            }}
+          >
+            Edit
+          </button>
+        </nav>
+      )}
       <Dialog
         open={Boolean(dialog)}
         onOpenChange={(open) => !busy && !open && setDialog(undefined)}
@@ -1588,10 +2078,22 @@ export function LandingPageBuilderPage() {
             {dialog?.kind === "template" && dialog.template && (
               <>
                 <div className="lb-template-detail-images">
-                  <img src={dialog.template.preview} alt="Desktop design direction" />
-                  <img src={dialog.template.mobilePreview} alt="Mobile background composition" />
+                  <StoredImage
+                    placeholder="skeleton"
+                    src={dialog.template.preview}
+                    alt="Desktop design direction"
+                  />
+                  <StoredImage
+                    placeholder="skeleton"
+                    src={dialog.template.mobilePreview}
+                    alt="Mobile background composition"
+                  />
                   {dialog.template.orderingPreview && (
-                    <img src={dialog.template.orderingPreview} alt="Companion ordering direction" />
+                    <StoredImage
+                      placeholder="skeleton"
+                      src={dialog.template.orderingPreview}
+                      alt="Companion ordering direction"
+                    />
                   )}
                 </div>
                 <p>{dialog.template.description}</p>

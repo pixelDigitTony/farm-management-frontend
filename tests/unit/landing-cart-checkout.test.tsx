@@ -139,6 +139,18 @@ beforeEach(() => {
   }));
 });
 describe("public cart and checkout", () => {
+  it("closes an already open storefront at its access deadline even if revalidation is offline", async () => {
+    vi.mocked(api).mockRejectedValue(new ApiError("Offline", 503));
+    const timed = {
+      ...data(),
+      serverTime: new Date().toISOString(),
+      publicAccessEndsAt: new Date(Date.now() + 250).toISOString(),
+    };
+    setup(timed);
+    expect(screen.getByText("Add five")).toBeInTheDocument();
+    await screen.findByText("This page is currently unavailable");
+    expect(screen.queryByText("Add five")).not.toBeInTheDocument();
+  });
   it("uses hydrated quantity for back-to-back additions, partial cap and whole-line removal", async () => {
     localStorage.setItem(
       "miss-v-cart:business:page",
@@ -273,7 +285,7 @@ describe("public cart and checkout", () => {
     expect(screen.getByText('{"acceptedQuantity":5,"rejectionReason":null}')).toBeInTheDocument();
   });
   it.each([
-    [404, "This page is not published"],
+    [404, "This page is currently unavailable"],
     [503, "Unable to load this page"],
   ])("distinguishes initial %s errors", async (status, message) => {
     vi.mocked(api).mockRejectedValue(new ApiError("Failed", status as number));

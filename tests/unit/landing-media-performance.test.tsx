@@ -374,3 +374,46 @@ describe("landing media performance", () => {
     expect(events).toHaveBeenLastCalledWith("ready");
   });
 });
+
+describe("landing image placeholders", () => {
+  it("keeps the skeleton through fetch and decode, then reveals the image", async () => {
+    const request = deferred<ReturnType<typeof ok>>();
+    const decoding = deferred<void>();
+    vi.mocked(fetch).mockReturnValueOnce(request.promise as Promise<Response>);
+    const view = render(
+      <StoredImage
+        placeholder="skeleton"
+        src={imageId(501)}
+        alt="Slow image"
+        width={600}
+        height={400}
+      />,
+    );
+    const img = view.getByAltText("Slow image");
+    expect(img).toHaveAttribute("data-image-state", "loading");
+    await act(async () => request.resolve(ok()));
+    Object.defineProperty(img, "decode", { configurable: true, value: () => decoding.promise });
+    fireEvent.load(img);
+    expect(img).toHaveAttribute("data-image-state", "loading");
+    await act(async () => decoding.resolve());
+    expect(img).toHaveAttribute("data-image-state", "ready");
+    expect(view.container.querySelector(".landing-media-skeleton")).toBeNull();
+  });
+  it("ignores obsolete decode and resets failed images to loading on retry", async () => {
+    const decoding = deferred<void>();
+    const view = render(
+      <StoredImage placeholder="skeleton" src="/first.jpg" alt="Changing image" />,
+    );
+    const old = view.getByAltText("Changing image");
+    Object.defineProperty(old, "decode", { configurable: true, value: () => decoding.promise });
+    fireEvent.load(old);
+    view.rerender(<StoredImage placeholder="skeleton" src="/second.jpg" alt="Changing image" />);
+    await act(async () => decoding.resolve());
+    const img = view.getByAltText("Changing image");
+    expect(img).toHaveAttribute("data-image-state", "loading");
+    fireEvent.error(img);
+    expect(view.getByText("Image unavailable")).toBeVisible();
+    fireEvent.click(view.getByText("Retry image"));
+    expect(view.getByAltText("Changing image")).toHaveAttribute("data-image-state", "loading");
+  });
+});

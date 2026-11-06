@@ -83,7 +83,14 @@ export function hasStorefrontContent(block: Block) {
     case "MEDIA_STORY":
       return block.content.frames.length > 0;
     case "TESTIMONIALS":
-      return block.content.entries.some((entry) => entry.enabled);
+      return block.content.entries.some(
+        (entry) =>
+          entry.enabled &&
+          typeof entry.quote === "string" &&
+          entry.quote.trim() &&
+          typeof entry.author === "string" &&
+          entry.author.trim(),
+      );
     case "GALLERY":
       return Boolean(block.content.media?.length || block.content.mediaUrls.length);
     default:
@@ -1071,7 +1078,14 @@ export function StorefrontBlock({ block, context }: { block: Block; context: Sto
       <p className="lp-empty">Add your offerings in the inspector.</p>
     ) : null;
   if (block.type === "TESTIMONIALS") {
-    const entries = block.content.entries.filter((e) => e.enabled);
+    const entries = block.content.entries.filter(
+      (e) =>
+        e.enabled &&
+        typeof e.quote === "string" &&
+        e.quote.trim() &&
+        typeof e.author === "string" &&
+        e.author.trim(),
+    );
     const cards = entries.map((e) => (
       <figure key={e.id} className="lp-testimonial">
         {e.thumbnail && <AssetImage media={e.thumbnail} />}

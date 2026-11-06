@@ -26,6 +26,7 @@ export function LandingWorkspaceControls({
   onSelectDraft,
   onTemplateLinked,
   refresh,
+  actions,
 }: {
   page?: LandingPageRecord;
   draft?: LandingPageVariant;
@@ -39,6 +40,7 @@ export function LandingWorkspaceControls({
   onSelectDraft: (draft: LandingPageVariant) => void;
   onTemplateLinked: (id: string, revision: number) => void;
   refresh: () => Promise<void>;
+  actions?: "templates" | "pages";
 }) {
   const client = useQueryClient();
   const pages = useQuery({
@@ -160,41 +162,49 @@ export function LandingWorkspaceControls({
   return (
     <div className="lb-workspace-controls">
       <fieldset className="lb-page-actions" aria-label="Page actions">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={locked || !canCreate}
-          onClick={() => open("create")}
-        >
-          Create landing page
-        </Button>
+        {actions !== "templates" && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={locked || !canCreate}
+            onClick={() => open("create")}
+          >
+            Create landing page
+          </Button>
+        )}
         {draft && (
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={locked || !canCreate}
-              onClick={() => open("clone")}
-            >
-              Publish as another page
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={locked || !canEdit}
-              onClick={() => open("save")}
-            >
-              Save template
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={locked || !canCreate}
-              onClick={() => open("library")}
-            >
-              My templates
-            </Button>
-            {page && (
+            {actions !== "templates" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={locked || !canCreate}
+                onClick={() => open("clone")}
+              >
+                Publish as another page
+              </Button>
+            )}
+            {actions !== "pages" && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={locked || !canEdit}
+                  onClick={() => open("save")}
+                >
+                  Save template
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={locked || !canCreate}
+                  onClick={() => open("library")}
+                >
+                  My templates
+                </Button>
+              </>
+            )}
+            {page && actions !== "templates" && (
               <Button
                 variant="outline"
                 className="lb-danger-outline"
@@ -248,7 +258,7 @@ export function LandingWorkspaceControls({
               : dialog === "archive"
                 ? "This page will be unpublished and archived. Its address stays reserved, and existing order records remain available."
                 : dialog === "clone"
-                  ? "Copy and publish this saved draft as a separate page with its own address."
+                  ? "Copy and publish this saved draft as a separate page with its own address. Activate its link from Publishing when ready."
                   : dialog === "library"
                     ? "Use a private saved design as a new draft variant."
                     : "Choose a unique address and starting design for this page."}
@@ -401,7 +411,7 @@ export function LandingWorkspaceControls({
                         : dialog === "archive"
                           ? "Delete page"
                           : dialog === "clone"
-                            ? "Create and publish"
+                            ? "Create and publish draft"
                             : "Create page"}
                 </Button>
               </div>
